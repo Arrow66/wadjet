@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Wadjet",
+  "version": "1.1.0",
+  "description": "Evaluates remote job postings for fraud and low quality.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Investigate with Wadjet",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:3000/*",
+    "http://localhost:3000/*",
+    "http://localhost:5173/*",
+    "*://*.linkedin.com/*",
+    "*://linkedin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.linkedin.com/jobs/*",
+        "*://linkedin.com/jobs/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/image.png",
+        "icons/image-inline.png",
+        "icons/image-unevaluated-inline.png",
+        "icons/image-unevaluated.png"
+      ],
+      "matches": ["*://*.linkedin.com/*", "*://linkedin.com/*"]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./src/graph/investigationGraph.ts:investigationGraph"
+  },
+  "env": ".env"
+}

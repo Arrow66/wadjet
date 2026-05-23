@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit API keys
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+dist-ssr/
+
+# Tooling caches
+.vite/
+.langgraph_api/
+
+# Runtime SQLite cache (investigations, LLM responses, jobs)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Generated debug dumps & scratch test output
+llm-dump.json
+test_data/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sw?
+
+# Ad-hoc dev/debug scripts (one-off, not part of the app)
+/test_schema.js
+/server/test_*.js
+/server/test_*.mjs
+/server/test-graph.ts
+/server/dump-llm.js
+/server/read-cache.js
+/server/read-inv-cache.js

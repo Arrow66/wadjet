@@ -1,0 +1,32 @@
+{
+  "software_engineering": {
+    "junior": 85000,
+    "mid": 130000,
+    "senior": 170000
+  },
+  "data_analytics": {
+    "junior": 70000,
+    "mid": 95000,
+    "senior": 135000
+  },
+  "customer_support": {
+    "junior": 45000,
+    "mid": 60000,
+    "senior": 80000
+  },
+  "data_entry": {
+    "junior": 35000,
+    "mid": 45000,
+    "senior": 55000
+  },
+  "sales_marketing": {
+    "junior": 55000,
+    "mid": 85000,
+    "senior": 120000
+  },
+  "design": {
+    "junior": 65000,
+    "mid": 95000,
+    "senior": 130000
+  }
+}
