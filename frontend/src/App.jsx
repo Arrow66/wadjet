@@ -68,6 +68,23 @@ function App() {
 
             {finalResult && (
               <div className="final-verdict-container animate-slide-up">
+                {finalResult.isSample && (
+                  <div
+                    style={{
+                      padding: '0.5rem 0.875rem',
+                      marginBottom: '0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid var(--accent-primary, #c9a45c)',
+                      background: 'rgba(201, 164, 92, 0.08)',
+                      color: 'var(--accent-primary, #c9a45c)',
+                      fontSize: '0.85rem',
+                      fontWeight: 500,
+                      display: 'inline-block'
+                    }}
+                  >
+                    Sample investigation — this URL was not cached, showing a representative past case.
+                  </div>
+                )}
                 <div className="final-verdict-card glass-panel">
                   <div className="verdict-accent-line"></div>
                   

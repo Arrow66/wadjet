@@ -141,6 +141,19 @@ export function getCachedInvestigation(url: string): any | null {
   return null;
 }
 
+// Used by MOCK_MODE when an exact URL match is not in cache.
+// Prefer newest Verified investigation, else newest of any tier.
+export function getFallbackInvestigation(): any | null {
+  const database = getDb();
+  const verifiedRow = database.prepare(
+    "SELECT final_state FROM investigation_cache WHERE tier = 'Verified' ORDER BY created_at DESC LIMIT 1"
+  ).get() as { final_state: string } | undefined;
+  const row = verifiedRow ?? (database.prepare(
+    'SELECT final_state FROM investigation_cache ORDER BY created_at DESC LIMIT 1'
+  ).get() as { final_state: string } | undefined);
+  return row ? JSON.parse(row.final_state) : null;
+}
+
 export function setCachedInvestigation(url: string, finalState: any): void {
   const database = getDb();
   const hash = hashPrompt(url);

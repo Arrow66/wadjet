@@ -91,17 +91,42 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
   sendEvent('status', { message: 'Investigation started', status: 'initializing' });
 
   try {
-    const { getCachedInvestigation, setCachedInvestigation, normalizeUrl, extensionPreCache } = await import('./src/services/cache.js');
+    const { getCachedInvestigation, getFallbackInvestigation, setCachedInvestigation, normalizeUrl, extensionPreCache } = await import('./src/services/cache.js');
 
     const normalizedUrl = normalizeUrl(url);
+    const isMock = process.env.MOCK_MODE === 'true';
 
-    // Check cache first
-    const cached = getCachedInvestigation(normalizedUrl);
-    if (cached && process.env.MOCK_MODE !== 'true') {
-      sendEvent('status', { message: 'Loading from cache...', status: 'initializing' });
+    let cached = getCachedInvestigation(normalizedUrl);
+    let isFallback = false;
+
+    if (isMock && !cached) {
+      cached = getFallbackInvestigation();
+      isFallback = !!cached;
+      if (cached) console.log('[MOCK] No exact match for URL; serving fallback investigation from cache.');
+    }
+
+    if (cached) {
+      if (isFallback) {
+        sendEvent('status', { message: 'Loading sample investigation (URL not cached in mock mode)', status: 'initializing', sample: true });
+      } else {
+        sendEvent('status', { message: 'Loading from cache...', status: 'initializing' });
+      }
+      // Map cached state fields to the graph node names the frontend listens for.
+      const RESULT_KEY_TO_NODE: Record<string, string> = {
+        linguisticResult: 'agent_linguistic',
+        companyResult: 'agent_company',
+        opportunityResult: 'agent_opportunity',
+        footprintResult: 'agent_footprint',
+        patternResult: 'agent_pattern',
+        activityResult: 'agent_activity',
+        adversarialResult: 'adversarial',
+      };
       for (const [key, value] of Object.entries(cached)) {
-        if (key.endsWith('Result')) {
-          sendEvent('node_update', { node: key, data: value });
+        if (key.endsWith('Result') && RESULT_KEY_TO_NODE[key]) {
+          sendEvent('node_update', {
+            node: RESULT_KEY_TO_NODE[key],
+            data: { [key]: value },
+          });
         }
       }
       sendEvent('status', { message: 'Investigation complete', status: 'done' });
@@ -113,8 +138,15 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
         caseReport: cached.caseReport || 'Investigation complete. Final TrustScore has been generated based on comprehensive remote analysis.',
         trustContributions: cached.trustContributions || [],
         qualityContributions: cached.qualityContributions || [],
-        provenanceFlags: cached.provenanceFlags || []
+        provenanceFlags: cached.provenanceFlags || [],
+        isSample: isFallback
       });
+      res.end();
+      return;
+    }
+
+    if (isMock) {
+      sendEvent('error', { message: 'MOCK_MODE: investigation_cache is empty. Run real investigations first to seed the cache.' });
       res.end();
       return;
     }
