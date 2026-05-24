@@ -171,7 +171,6 @@ stateDiagram-v2
   report --> [*]
 ```
 
-**Footprint runs after Company** so it can WHOIS the employer domain discovered during grounded company search — not the LinkedIn job-board hostname.
 
 ### What each agent does
 
@@ -352,85 +351,6 @@ These populate **Score Math** in agent modals and the **Calculation Ledger** in 
 
 ---
 
-## Architecture
-
-### System overview
-
-```mermaid
-flowchart TB
-  subgraph Browser["Browser"]
-    LI["LinkedIn / Job boards"]
-    EXT["Chrome Extension<br/>extension/"]
-    LI --> EXT
-  end
-
-  subgraph Frontend["Frontend — React + Vite :5173"]
-    APP["App.jsx"]
-    HOOK["useInvestigation.js"]
-    BOARD["InvestigationBoard"]
-    LEDGER["CalculationLedger"]
-    PORTAL["JobPortal"]
-    APP --> HOOK & BOARD & LEDGER & PORTAL
-  end
-
-  subgraph Server["Backend — Express + LangGraph :3000"]
-    INDEX["index.ts<br/>SSE + REST"]
-    JOBS["routes/jobs.ts"]
-    PORT["routes/portal.ts<br/>Partner API"]
-    CACHE["SQLite cache.sqlite"]
-    GRAPH["investigationGraph.ts"]
-
-    subgraph Pipeline["Investigation Pipeline"]
-      GATE["gatekeeper"]
-      AGENTS["6 specialist agents"]
-      SCORE["scorer + guardrails"]
-      REPORT["report"]
-    end
-
-    GEMINI["Gemini API"]
-    WHOIS["WHOIS"]
-    ATS["ATS detector"]
-    RUBRICS["rubrics/index.ts"]
-  end
-
-  EXT -->|"pre-cache, check"| JOBS
-  HOOK -->|"SSE investigate"| INDEX
-  PARTNER["Partner job boards"] -->|"portal API"| PORT
-  INDEX --> GRAPH --> Pipeline
-  AGENTS --> GEMINI & WHOIS & ATS --> RUBRICS
-  SCORE --> RUBRICS
-  GEMINI --> CACHE
-  GRAPH --> CACHE
-  INDEX -->|"node_update, complete"| HOOK
-  PORT --> CACHE
-```
-
-### Neurosymbolic layers
-
-```mermaid
-flowchart LR
-  subgraph Neural["Neural — LLM evidence extraction"]
-    LLM["Gemini<br/>structured + grounded search"]
-  end
-
-  subgraph Symbolic["Symbolic — deterministic enforcement"]
-    ZOD["Zod validation"]
-    RUB["Rubrics"]
-    WHOIS["WHOIS"]
-    ATS["ATS + channel detectors"]
-    GUARD["Guardrails"]
-  end
-
-  subgraph UI["Accountability — full transparency"]
-    LEDGER["Calculation Ledger"]
-    MODAL["Agent modals + citations"]
-  end
-
-  LLM --> ZOD --> RUB --> GUARD --> LEDGER
-  WHOIS --> RUB
-  ATS --> RUB
-  LLM --> MODAL
-```
 
 ### Technology stack
 
@@ -446,13 +366,6 @@ flowchart LR
 | Extension | Chrome Manifest V3 |
 | Scraping fallback | Jina Reader |
 
-### Typical Gemini call count
-
-| Scenario | Calls |
-|----------|-------|
-| Fresh investigation | 8–10 |
-| Cached re-investigation | 0 |
-| Strong consensus (skip adversarial) | 8–9 |
 
 ---
 
@@ -501,11 +414,10 @@ cd frontend && npm run dev
 
 **Load extension:** `chrome://extensions` → Developer mode → Load unpacked → select `extension/`
 
-**Test scam page:** open `http://127.0.0.1:3000/fake-job` in the dashboard — expect low Legitimacy, advance-fee pattern, Warning tier.
 
 ---
 
-## Partner Portal API
+## Partner Portal API (Alpha)
 
 External job boards can check whether Wadjet has verified a listing.
 
@@ -567,22 +479,12 @@ GET  /api/v1/jobs/check?url=&title=&company=
 POST /api/v1/jobs/pre-cache
 ```
 
-### B2B verification (legacy sync endpoint)
-
-```
-POST /api/v1/verify
-{ "url": "https://example.com/jobs/123" }
-```
-
 ### Utility
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/health` | Health check |
-| `GET` | `/fake-job` | Built-in scam page for testing |
 | `POST` | `/api/clear-cache` | Wipe SQLite caches |
-| `POST` | `/api/v1/generate-ftc-report` | Generate FTC fraud report |
-
 > **Extension protocol & SSE events:** [docs/FRONTEND.md](docs/FRONTEND.md)
 
 ---
@@ -640,41 +542,6 @@ curl -X POST http://127.0.0.1:3000/api/clear-cache
 
 ---
 
-## Project structure
-
-```
-wadjet/
-├── README.md
-├── docs/
-│   ├── SCORES_EXPLAINED.md    ← Plain-English scoring guide
-│   ├── AGENTS.md              ← Agent schemas & rubrics
-│   ├── SCORING.md             ← Worked examples & guardrails
-│   └── FRONTEND.md            ← Extension & UI reference
-├── extension/                 ← Chrome MV3 extension
-├── frontend/src/
-│   ├── App.jsx
-│   ├── hooks/useInvestigation.js
-│   └── components/            ← Ledger, agent cards, portal, etc.
-└── server/
-    ├── index.ts               ← Express, SSE, route mounting
-    └── src/
-        ├── graph/
-        │   ├── investigationGraph.ts
-        │   └── nodes/         ← gatekeeper, agents, scorer, report
-        ├── rubrics/index.ts   ← ALL deterministic scoring rules
-        ├── services/
-        │   ├── gemini.ts, cache.ts, portalJobService.ts
-        │   ├── atsDetector.ts, whois.ts, domainResolver.ts
-        │   └── scraper.ts
-        ├── routes/
-        │   ├── jobs.ts
-        │   └── portal.ts      ← Partner Portal API
-        └── middleware/
-            └── partnerAuth.ts
-```
-
----
-
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -689,19 +556,6 @@ wadjet/
 ```bash
 sqlite3 server/cache.sqlite "SELECT title, company, trust_score, quality_score FROM jobs ORDER BY created_at DESC LIMIT 5;"
 ```
-
----
-
-## Limitations
-
-| Limitation | Notes |
-|------------|-------|
-| LinkedIn-focused extension | Other boards use Jina scraper only |
-| English listings | Prompts optimized for English |
-| Gemini quotas | 8–10 calls per fresh investigation |
-| Report narrative | LLM-generated summary may occasionally disagree with agent evidence — ledger catches this |
-
----
 
 ## Documentation index
 
