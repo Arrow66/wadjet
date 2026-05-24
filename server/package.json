@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
-    "build:frontend": "cd ../frontend && npm install && npm run build",
+    "build:frontend": "cd ../frontend && npm ci --include=dev && npm run build",
     "build": "npm run build:frontend",
     "studio": "langgraphjs dev",
     "test": "echo \"Error: no test specified\" && exit 1"
