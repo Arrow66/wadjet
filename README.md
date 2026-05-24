@@ -171,7 +171,6 @@ stateDiagram-v2
   report --> [*]
 ```
 
-**Footprint runs after Company** so it can WHOIS the employer domain discovered during grounded company search — not the LinkedIn job-board hostname.
 
 ### What each agent does
 
