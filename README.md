@@ -417,7 +417,7 @@ cd frontend && npm run dev
 
 ---
 
-## Partner Portal API
+## Partner Portal API (Alpha)
 
 External job boards can check whether Wadjet has verified a listing.
 
