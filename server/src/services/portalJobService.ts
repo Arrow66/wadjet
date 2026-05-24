@@ -1,9 +1,6 @@
-import Database from 'better-sqlite3';
 import crypto from 'crypto';
-import { getCachedInvestigation, normalizeUrl, resolveCacheDbPath } from './cache.js';
+import { getCachedInvestigation, normalizeUrl, openReadonlyCacheDb } from './cache.js';
 import { isCacheOnlyMode } from './runtimeMode.js';
-
-const DB_PATH = resolveCacheDbPath();
 
 export const PORTAL_LISTING_THRESHOLDS = {
   legitimacy: 80,
@@ -47,7 +44,7 @@ type JobRow = {
 };
 
 function openReadDb() {
-  return new Database(DB_PATH, { readonly: true });
+  return openReadonlyCacheDb();
 }
 
 function meetsPortalThreshold(legitimacy: number, quality: number): boolean {

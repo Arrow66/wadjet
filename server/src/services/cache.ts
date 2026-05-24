@@ -24,6 +24,13 @@ function seedCacheIfNeeded(dbPath: string) {
   console.log('[Cache] Seeded database from demo-cache.sqlite →', dbPath);
 }
 
+/** Ensure cache.sqlite exists (seed from demo if needed), then open read-only. */
+export function openReadonlyCacheDb() {
+  const dbPath = resolveCacheDbPath();
+  seedCacheIfNeeded(dbPath);
+  return new Database(dbPath, { readonly: true });
+}
+
 let db: any;
 
 function getDb() {

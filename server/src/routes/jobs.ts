@@ -1,19 +1,12 @@
 import express from 'express';
-import Database from 'better-sqlite3';
-import { extensionPreCache, normalizeUrl, resolveCacheDbPath } from '../services/cache.js';
+import { extensionPreCache, normalizeUrl, openReadonlyCacheDb } from '../services/cache.js';
 
 const router = express.Router();
-const DB_PATH = resolveCacheDbPath();
-
-function getDb() {
-  const db = new Database(DB_PATH, { readonly: true });
-  return db;
-}
 
 // GET /api/v1/jobs
 router.get('/', (req, res) => {
   try {
-    const db = getDb();
+    const db = openReadonlyCacheDb();
     // Only fetch Verified Jobs: Trust >= 80, Quality >= 60
     const rows = db.prepare('SELECT * FROM jobs WHERE trust_score >= 80 AND quality_score >= 60 ORDER BY trust_score DESC, created_at DESC LIMIT 50').all();
     db.close();
@@ -34,7 +27,7 @@ router.get('/check', (req, res) => {
     if (!rawUrl) return res.status(400).json({ error: 'URL is required' });
 
     const normalizedUrl = normalizeUrl(rawUrl);
-    const db = getDb();
+    const db = openReadonlyCacheDb();
     
     // 1. Check exact canonical URL
     let row = db.prepare('SELECT trust_score, quality_score FROM jobs WHERE url = ?').get(normalizedUrl) as any;

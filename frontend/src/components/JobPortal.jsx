@@ -10,13 +10,23 @@ export default function JobPortal() {
 
   useEffect(() => {
     fetch('/api/v1/jobs')
-      .then(res => res.json())
-      .then(data => {
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || `Failed to fetch jobs (${res.status})`);
+        }
+        if (!Array.isArray(data)) {
+          throw new Error('Unexpected jobs response');
+        }
+        return data;
+      })
+      .then((data) => {
         setJobs(data);
         setLoading(false);
       })
       .catch(err => {
         console.error('Failed to fetch jobs', err);
+        setJobs([]);
         setLoading(false);
       });
   }, []);
