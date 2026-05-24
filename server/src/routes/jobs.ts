@@ -7,8 +7,10 @@ const router = express.Router();
 router.get('/', (req, res) => {
   try {
     const db = openReadonlyCacheDb();
-    // Only fetch Verified Jobs: Trust >= 80, Quality >= 60
-    const rows = db.prepare('SELECT * FROM jobs WHERE trust_score >= 80 AND quality_score >= 60 ORDER BY trust_score DESC, created_at DESC LIMIT 50').all();
+    // Verified remote jobs only: trust/quality thresholds + genuinely remote
+    const rows = db.prepare(
+      'SELECT * FROM jobs WHERE trust_score >= 80 AND quality_score >= 60 AND is_remote = 1 ORDER BY trust_score DESC, created_at DESC LIMIT 50',
+    ).all();
     db.close();
     res.json(rows);
   } catch (error) {

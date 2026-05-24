@@ -230,7 +230,7 @@ export function setCachedInvestigation(url: string, finalState: any): void {
         finalState.jobData.condensedDescription || '',
         finalState.finalTrustScore ?? 0,
         finalState.finalQualityScore ?? 0,
-        finalState.remoteResult?.isGenuineRemote ? 1 : 0,
+        finalState.opportunityResult?.isGenuineRemote ? 1 : 0,
         finalState.jobData.country || 'Unknown',
         Date.now()
       );

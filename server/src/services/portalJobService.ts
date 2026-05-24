@@ -184,14 +184,14 @@ export function listPortalJobs(options: {
   try {
     const rows = db.prepare(`
       SELECT * FROM jobs
-      WHERE trust_score >= ? AND quality_score >= ?
+      WHERE trust_score >= ? AND quality_score >= ? AND is_remote = 1
       ORDER BY trust_score DESC, created_at DESC
       LIMIT ? OFFSET ?
     `).all(minLegitimacy, minQuality, limit, offset) as JobRow[];
 
     const total = db.prepare(`
       SELECT COUNT(*) as count FROM jobs
-      WHERE trust_score >= ? AND quality_score >= ?
+      WHERE trust_score >= ? AND quality_score >= ? AND is_remote = 1
     `).get(minLegitimacy, minQuality) as { count: number };
 
     return {
