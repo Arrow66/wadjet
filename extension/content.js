@@ -103,6 +103,92 @@ function extractRawDOMText() {
   return container.innerText;
 }
 
+const POSTED_AGO_SELECTORS = [
+  '.jobs-unified-top-card__posted-date',
+  '.job-details-jobs-unified-top-card__primary-description-container',
+  '.jobs-unified-top-card__subtitle-primary-grouping',
+  '.posted-time-ago__text',
+  '.topcard__flavor--metadata'
+];
+
+const APPLICANT_COUNT_SELECTORS = [
+  '.jobs-unified-top-card__applicant-count',
+  '.job-details-jobs-unified-top-card__applicant-count',
+  '.num-applicants__caption'
+];
+
+const POSTER_NAME_SELECTORS = [
+  '.jobs-poster__name',
+  '.job-details-jobs-unified-top-card__job-poster a',
+  '.jobs-poster a[href*="/in/"]'
+];
+
+const POSTER_HEADLINE_SELECTORS = [
+  '.jobs-poster__title',
+  '.job-details-jobs-unified-top-card__job-poster__subtitle',
+  '.hirer-card__hirer-information .text-body-small'
+];
+
+function findFirstText(selectors) {
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el && el.innerText) {
+      const txt = el.innerText.trim();
+      if (txt) return txt;
+    }
+  }
+  return null;
+}
+
+function extractPostedAgoInfo() {
+  let raw = findFirstText(POSTED_AGO_SELECTORS);
+  if (raw) {
+    const match = raw.match(/(re-?posted|posted)\s+[^.\n]*?\bago/i);
+    if (match) raw = match[0];
+  }
+  if (!raw) return { postedAgoText: null, isRepost: false };
+  return {
+    postedAgoText: raw,
+    isRepost: /re-?posted/i.test(raw)
+  };
+}
+
+function extractApplicantCountText() {
+  return findFirstText(APPLICANT_COUNT_SELECTORS);
+}
+
+function extractJobPoster() {
+  for (const sel of POSTER_NAME_SELECTORS) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    const name = el.innerText?.trim();
+    if (!name) continue;
+
+    let profileUrl = null;
+    if (el.tagName === 'A' && el.href) {
+      profileUrl = el.href;
+    } else {
+      const anchor = el.closest('a[href*="/in/"]') || el.querySelector('a[href*="/in/"]');
+      if (anchor) profileUrl = anchor.href;
+    }
+
+    const headline = findFirstText(POSTER_HEADLINE_SELECTORS);
+
+    return { name, profileUrl, headline: headline || null };
+  }
+  return null;
+}
+
+function collectJobMetadata() {
+  const posted = extractPostedAgoInfo();
+  return {
+    postedAgoText: posted.postedAgoText,
+    isRepost: posted.isRepost,
+    applicantCountText: extractApplicantCountText(),
+    jobPoster: extractJobPoster()
+  };
+}
+
 function logoMarkup(src, alt) {
   return `<img class="wedjet-logo" src="${src}" alt="${alt}" width="22" height="22" draggable="false" />`;
 }
@@ -135,7 +221,8 @@ function navigateToInvestigation(icon, { precache }) {
     chrome.runtime.sendMessage({
       type: 'PRE_CACHE_AND_NAVIGATE',
       url,
-      rawMarkdown: extractRawDOMText()
+      rawMarkdown: extractRawDOMText(),
+      metadata: collectJobMetadata()
     });
     return;
   }
@@ -239,7 +326,7 @@ function handleJobChange() {
     showLoading(icon);
 
     chrome.runtime.sendMessage(
-      { type: 'CHECK_JOB', url, title: jobInfo.title, company: jobInfo.company },
+      { type: 'CHECK_JOB', url, title: jobInfo.title, company: jobInfo.company, metadata: collectJobMetadata() },
       (response) => {
         if (!document.getElementById('wedjet-inline-icon')) return;
 
@@ -319,7 +406,8 @@ chrome.runtime.onMessage.addListener((request) => {
     chrome.runtime.sendMessage({
       type: 'PRE_CACHE_AND_NAVIGATE',
       url: location.href,
-      rawMarkdown: extractRawDOMText()
+      rawMarkdown: extractRawDOMText(),
+      metadata: collectJobMetadata()
     });
     return;
   }

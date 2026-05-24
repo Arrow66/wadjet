@@ -8,12 +8,10 @@ import pRetry from 'p-retry';
  * @returns {Promise<Object>} Structured domain info
  */
 async function getDomainInfo(domainName) {
-  const run = async () => {
-    // 1. Get raw whois data
+  const parseWhois = async () => {
     const domainWhois = await whoisDomain(domainName);
 
-    // 2. whoiser returns an object keyed by the whois server that responded.
-    // We iterate to find the first one that has a 'Created Date' or similar.
+    // whoiser returns an object keyed by the whois server that responded.
     let creationDateStr = null;
     let isPrivacyProtected = false;
 
@@ -26,7 +24,6 @@ async function getDomainInfo(domainName) {
         creationDateStr = data['Creation Date'];
       }
 
-      // Basic privacy check
       const rawText = JSON.stringify(data).toLowerCase();
       if (
         rawText.includes('privacy') ||
@@ -45,29 +42,46 @@ async function getDomainInfo(domainName) {
         domain: domainName,
         ageInDays: null,
         isPrivacyProtected,
-        error: 'Creation date not found in WHOIS record'
+        error: 'Creation date not found in WHOIS record',
       };
     }
 
-    // 3. Calculate age
     const creationDate = new Date(creationDateStr);
-    const now = new Date();
-    const ageInDays = Math.floor((now.getTime() - new Date(creationDate).getTime()) / (1000 * 60 * 60 * 24));
+    const ageInDays = Math.floor(
+      (Date.now() - creationDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
 
     return {
       domain: domainName,
       creationDate: creationDate.toISOString(),
       ageInDays,
-      isPrivacyProtected
+      isPrivacyProtected,
     };
   };
 
-  return pRetry(run, {
-    retries: 2,
-    onFailedAttempt: error => {
-      console.log(`WHOIS lookup attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`);
-    }
-  });
+  try {
+    return await pRetry(parseWhois, {
+      retries: 2,
+      shouldRetry: (error) => {
+        const msg = error instanceof Error ? error.message : String(error);
+        return !/not supported|invalid tld|TLD for/i.test(msg);
+      },
+      onFailedAttempt: (error) => {
+        console.log(
+          `WHOIS lookup attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`,
+        );
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[WHOIS] Lookup failed for ${domainName}: ${message}`);
+    return {
+      domain: domainName,
+      ageInDays: null,
+      isPrivacyProtected: false,
+      error: message,
+    };
+  }
 }
 
 /**

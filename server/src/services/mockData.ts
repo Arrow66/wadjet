@@ -25,8 +25,11 @@ export const MOCK_LINGUISTIC = {
   "hasMoneyFirst": false,
   "hasGrammarIssues": false,
   "hasPiiRequest": false,
+  "hasAsyncCultureSignals": false,
+  "asyncCultureEvidence": null,
   "flaggedPhrases": [],
   "riskScore": 0,
+  "qualityScore": 0,
   "analysis": "Linguistic risk calculated at 0/100 based on 2 flagged patterns."
 };
 
@@ -44,6 +47,10 @@ export const MOCK_COMPANY = {
   "hasReviews": true,
   "hasNews": true,
   "industryAlignment": true,
+  "recentLayoffsDetected": false,
+  "layoffSeverity": "none",
+  "fundingStage": "public",
+  "lastFundingYear": null,
   "evidence": [
     {
       "source": "Official Site",
@@ -140,6 +147,7 @@ export const MOCK_OPPORTUNITY = {
   "is100PercentRemote": false,
   "hasGeoRestriction": false,
   "hasInOfficeRequirement": false,
+  "compensationParityWithRemoteMarket": "unknown",
   "evidence": [
     {
       "source": "Compensation",
@@ -277,6 +285,12 @@ export const MOCK_ACTIVITY = {
   "hasNamedRecruiter": false,
   "usesStandardATS": true,
   "isActivelyMonitored": true,
+  "applicationChannelIsProfessional": true,
+  "interviewProcessDescribed": false,
+  "numberOfStages": null,
+  "jobPosterIdentified": false,
+  "posterAppearsCredible": false,
+  "applicantDemandSignal": "unknown",
   "evidence": [
     {
       "source": "Description",

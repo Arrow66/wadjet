@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import statsRouter from './src/routes/stats.js';
 import jobsRouter from './src/routes/jobs.js';
+import portalRouter from './src/routes/portal.js';
+import { requirePartnerApiKey } from './src/middleware/partnerAuth.js';
 
 dotenv.config();
 
@@ -26,6 +28,12 @@ const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 10, // limit each IP to 10 requests per windowMs
   message: 'Too many requests from this IP, please try again after a minute'
+});
+
+const portalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: 'Too many portal API requests from this IP, please try again after a minute',
 });
 
 // ── FAKE SCAM JOB POSTING FOR TESTING ────────────────────────────────
@@ -88,65 +96,24 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
     res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  sendEvent('status', { message: 'Investigation started', status: 'initializing' });
+  sendEvent('status', { message: 'Remote-role verification started', status: 'initializing' });
 
   try {
-    const { getCachedInvestigation, getFallbackInvestigation, setCachedInvestigation, normalizeUrl, extensionPreCache } = await import('./src/services/cache.js');
+    const { setCachedInvestigation, normalizeUrl, extensionPreCache } = await import('./src/services/cache.js');
+    const { isCacheOnlyMode, CACHE_ONLY_MISS_MESSAGE } = await import('./src/services/runtimeMode.js');
+    const { loadCachedInvestigation, streamCachedInvestigation } = await import('./src/services/investigationServe.js');
 
     const normalizedUrl = normalizeUrl(url);
-    const isMock = process.env.MOCK_MODE === 'true';
-
-    let cached = getCachedInvestigation(normalizedUrl);
-    let isFallback = false;
-
-    if (isMock && !cached) {
-      cached = getFallbackInvestigation();
-      isFallback = !!cached;
-      if (cached) console.log('[MOCK] No exact match for URL; serving fallback investigation from cache.');
-    }
+    const { state: cached, isFallback } = loadCachedInvestigation(url);
 
     if (cached) {
-      if (isFallback) {
-        sendEvent('status', { message: 'Loading sample investigation (URL not cached in mock mode)', status: 'initializing', sample: true });
-      } else {
-        sendEvent('status', { message: 'Loading from cache...', status: 'initializing' });
-      }
-      // Map cached state fields to the graph node names the frontend listens for.
-      const RESULT_KEY_TO_NODE: Record<string, string> = {
-        linguisticResult: 'agent_linguistic',
-        companyResult: 'agent_company',
-        opportunityResult: 'agent_opportunity',
-        footprintResult: 'agent_footprint',
-        patternResult: 'agent_pattern',
-        activityResult: 'agent_activity',
-        adversarialResult: 'adversarial',
-      };
-      for (const [key, value] of Object.entries(cached)) {
-        if (key.endsWith('Result') && RESULT_KEY_TO_NODE[key]) {
-          sendEvent('node_update', {
-            node: RESULT_KEY_TO_NODE[key],
-            data: { [key]: value },
-          });
-        }
-      }
-      sendEvent('status', { message: 'Investigation complete', status: 'done' });
-      sendEvent('complete', {
-        finalTrustScore: cached.finalTrustScore,
-        finalQualityScore: cached.finalQualityScore,
-        tier: cached.tier,
-        confidenceLevel: cached.confidenceLevel,
-        caseReport: cached.caseReport || 'Investigation complete. Final TrustScore has been generated based on comprehensive remote analysis.',
-        trustContributions: cached.trustContributions || [],
-        qualityContributions: cached.qualityContributions || [],
-        provenanceFlags: cached.provenanceFlags || [],
-        isSample: isFallback
-      });
+      streamCachedInvestigation(sendEvent, cached, normalizedUrl, { isFallback });
       res.end();
       return;
     }
 
-    if (isMock) {
-      sendEvent('error', { message: 'MOCK_MODE: investigation_cache is empty. Run real investigations first to seed the cache.' });
+    if (isCacheOnlyMode()) {
+      sendEvent('error', { message: CACHE_ONLY_MISS_MESSAGE });
       res.end();
       return;
     }
@@ -154,11 +121,20 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
     const { investigationGraph } = await import('./src/graph/investigationGraph.js');
 
     let initialState: any = { url: normalizedUrl };
-    
+
     const preCachedContent = extensionPreCache.get(normalizedUrl);
     if (preCachedContent) {
       console.log('[Extension] Found pre-cached DOM text. Bypassing Jina scraper.');
       initialState.rawMarkdown = preCachedContent.rawMarkdown;
+      if (preCachedContent.metadata) {
+        initialState.extensionMetadata = preCachedContent.metadata;
+        console.log('[Extension] Found LinkedIn page metadata:', {
+          postedAgoText: preCachedContent.metadata.postedAgoText,
+          isRepost: preCachedContent.metadata.isRepost,
+          applicantCountText: preCachedContent.metadata.applicantCountText,
+          jobPosterName: preCachedContent.metadata.jobPoster?.name
+        });
+      }
     }
 
     // Execute the graph and stream state updates
@@ -177,7 +153,7 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
 
       if (nodeName === 'report') {
         // The graph is fully complete
-        sendEvent('status', { message: 'Investigation complete', status: 'done' });
+        sendEvent('status', { message: 'Remote-role verification complete', status: 'done' });
         
         // Cache the final result
         setCachedInvestigation(normalizedUrl, accumulatedState);
@@ -187,17 +163,20 @@ app.get('/api/investigate', apiLimiter, async (req, res) => {
           finalQualityScore: accumulatedState.finalQualityScore,
           tier: accumulatedState.tier,
           confidenceLevel: accumulatedState.confidenceLevel,
-          caseReport: accumulatedState.caseReport || 'Investigation complete. Final TrustScore has been generated based on comprehensive remote analysis.',
+          caseReport: accumulatedState.caseReport || 'Remote-role verification complete. See agent cards for the underlying signals.',
           trustContributions: accumulatedState.trustContributions || [],
           qualityContributions: accumulatedState.qualityContributions || [],
-          provenanceFlags: accumulatedState.provenanceFlags || []
+          provenanceFlags: accumulatedState.provenanceFlags || [],
+          calculation: accumulatedState.calculation || null,
+          jobData: accumulatedState.jobData || null,
+          url: normalizedUrl
         });
       }
     }
 
   } catch (error) {
     console.error('Investigation error:', error);
-    sendEvent('error', { message: 'An error occurred during investigation' });
+    sendEvent('error', { message: 'An error occurred during remote-role verification' });
   } finally {
     res.end();
   }
@@ -219,6 +198,33 @@ app.post('/api/v1/verify', apiLimiter, async (req, res) => {
   }
 
   try {
+    const { normalizeUrl } = await import('./src/services/cache.js');
+    const { isCacheOnlyMode, CACHE_ONLY_MISS_MESSAGE } = await import('./src/services/runtimeMode.js');
+    const { loadCachedInvestigation } = await import('./src/services/investigationServe.js');
+
+    const normalizedUrl = normalizeUrl(url);
+    const { state: cached, isFallback } = loadCachedInvestigation(url);
+
+    if (cached) {
+      return res.json({
+        success: true,
+        cached: !isFallback,
+        sample: isFallback,
+        data: {
+          targetUrl: url,
+          trustScore: cached.finalTrustScore,
+          confidenceTier: cached.tier,
+          confidenceLevel: cached.confidenceLevel,
+          executiveSummary: cached.caseReport,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+
+    if (isCacheOnlyMode()) {
+      return res.status(404).json({ error: CACHE_ONLY_MISS_MESSAGE });
+    }
+
     const { investigationGraph } = await import('./src/graph/investigationGraph.js');
     const stream = await investigationGraph.stream({ url });
 
@@ -280,6 +286,15 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.get('/api/v1/config', async (_req, res) => {
+  const { isCacheOnlyMode, cacheOnlyModeLabel, shouldShowCacheModeBanner } = await import('./src/services/runtimeMode.js');
+  res.json({
+    cacheOnlyMode: isCacheOnlyMode(),
+    showCacheModeBanner: shouldShowCacheModeBanner(),
+    mode: cacheOnlyModeLabel() ?? 'development',
+  });
+});
+
 app.post('/api/clear-cache', async (req, res) => {
   try {
     const { clearAllCaches } = await import('./src/services/cache.js');
@@ -293,10 +308,13 @@ app.post('/api/clear-cache', async (req, res) => {
 
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/jobs', jobsRouter);
+app.use('/api/v1/portal', portalLimiter, requirePartnerApiKey, portalRouter);
 
 app.listen(Number(PORT), '127.0.0.1', () => {
   console.log(`Eye Server running on http://127.0.0.1:${PORT}`);
-  if (process.env.MOCK_MODE === 'true') {
-    console.log('⚡ MOCK MODE ENABLED — No Gemini API tokens will be consumed');
+  if (process.env.NODE_ENV === 'production') {
+    console.log('🔒 PRODUCTION — cached jobs only; unknown URLs fall back to latest verified result');
+  } else if (process.env.MOCK_MODE === 'true') {
+    console.log('⚡ LOCAL MOCK — cached investigations only (no banner, no Gemini)');
   }
 });

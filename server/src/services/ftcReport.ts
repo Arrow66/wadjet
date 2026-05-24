@@ -12,29 +12,27 @@ const FTCReportSchema = z.object({
 export async function generateFTCReport(payload: any) {
   console.log('[FTC Service] Generating official fraud report...');
 
-  const prompt = `
-    You are an AI assisting with drafting a Federal Trade Commission (FTC) fraud complaint.
-    Take the following intelligence gathered by our forensic AI agents and format it into a highly professional, objective, and detailed Incident Report.
-    
-    TARGET INFORMATION:
-    Target URL: ${payload.url}
-    Company Claimed: ${payload.companyName}
-    Job Title Claimed: ${payload.jobTitle}
-    
-    FORENSIC EVIDENCE:
-    TrustScore: ${payload.trustScore}/100 (Where 100 is perfectly legitimate, 0 is absolute scam)
-    Confidence Tier: ${payload.tier}
-    Executive Summary: ${payload.caseReport}
-    
-    CRITICAL RULES FOR THE DOCUMENT:
-    1. Output MUST be formatted in Markdown.
-    2. Use formal law-enforcement tone (e.g., "The target entity exhibits..." instead of "I think it's a scam").
-    3. Include sections: [INCIDENT OVERVIEW], [FORENSIC FINDINGS], [SUSPECTED SCAM TYPOLOGY], and [RECOMMENDED ACTIONS].
-    4. Do not hallucinate data. Only use what is provided above. If data is missing, write "Data not available".
-  `;
+  const system = `You assist with drafting a Federal Trade Commission (FTC) fraud complaint.
+Take intelligence gathered by forensic AI agents and format it into a highly professional, objective, detailed Incident Report.
+
+CRITICAL RULES FOR THE DOCUMENT:
+1. Output MUST be formatted in Markdown.
+2. Use formal law-enforcement tone ("The target entity exhibits..." NOT "I think it's a scam").
+3. Include sections: [INCIDENT OVERVIEW], [FORENSIC FINDINGS], [SUSPECTED SCAM TYPOLOGY], [RECOMMENDED ACTIONS].
+4. Do not hallucinate data. Use ONLY what is provided. If data is missing, write "Data not available".`;
+
+  const user = `TARGET INFORMATION:
+Target URL: ${payload.url}
+Company Claimed: ${payload.companyName}
+Job Title Claimed: ${payload.jobTitle}
+
+FORENSIC EVIDENCE:
+TrustScore: ${payload.trustScore}/100 (100 = perfectly legitimate, 0 = absolute scam)
+Confidence Tier: ${payload.tier}
+Executive Summary: ${payload.caseReport}`;
 
   try {
-    const response = await callGeminiStructured(prompt, FTCReportSchema);
+    const response = await callGeminiStructured({ system, user }, FTCReportSchema);
     return response.reportMarkdown;
   } catch (error) {
     console.error('[FTC Service] Failed to generate report:', error);

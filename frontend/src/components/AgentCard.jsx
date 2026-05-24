@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, AlertTriangle, FileText, Globe, Building2, SearchCode, Activity, MapPin, Briefcase } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, FileText, Globe, Building2, SearchCode, Activity, Briefcase } from 'lucide-react';
 import EyeOfHorus from './icons/EyeOfHorus';
 
 const ICONS = {
@@ -8,7 +8,6 @@ const ICONS = {
   opportunityResult: Briefcase,
   footprintResult: Globe,
   patternResult: SearchCode,
-  remoteResult: MapPin,
   activityResult: Activity,
   adversarialResult: EyeOfHorus
 };
@@ -19,21 +18,76 @@ const TITLES = {
   opportunityResult: 'Opportunity Value',
   footprintResult: 'Digital Footprint',
   patternResult: 'Pattern Analysis',
-  remoteResult: 'Remote Verification',
   activityResult: 'Recruiter Activity',
   adversarialResult: 'Adversarial Challenge'
 };
+
+const AGENT_RISK_LABELS = {
+  linguisticResult: 'Listing Scam Risk',
+  companyResult: 'Employer Verification Risk',
+  opportunityResult: 'Compensation Scam Risk',
+  footprintResult: 'Infrastructure Risk',
+  patternResult: 'Scam Template Risk',
+  activityResult: 'Hiring-Channel Risk',
+};
+
+const AGENT_QUALITY_LABELS = {
+  linguisticResult: 'Remote-Culture Quality',
+  companyResult: 'Employer Quality',
+  opportunityResult: 'Remote-Role Quality',
+  activityResult: 'Hiring-Process Quality',
+};
+
+const DUAL_SCORE_AGENTS = new Set([
+  'linguisticResult',
+  'companyResult',
+  'opportunityResult',
+  'activityResult',
+]);
+
+function severityFor(value, mode) {
+  const v = value ?? 0;
+  if (mode === 'risk') {
+    if (v >= 70) return 'danger';
+    if (v >= 40) return 'warning';
+    return 'success';
+  }
+  // Low quality is informational — not a scam alert.
+  if (v >= 75) return 'success';
+  if (v >= 40) return 'warning';
+  return 'neutral';
+}
+
+function cardSeverity(agentId, data) {
+  if (agentId === 'adversarialResult') {
+    if (!data.challengeSucceeded) return 'neutral';
+    const adj = data.confidenceAdjustment ?? 0;
+    if (adj < 0) return adj <= -10 ? 'danger' : 'warning';
+    if (adj > 0) return 'success';
+    return 'warning';
+  }
+  if (typeof data.riskScore === 'number') return severityFor(data.riskScore, 'risk');
+  if (typeof data.qualityScore === 'number') return severityFor(data.qualityScore, 'quality');
+  return 'success';
+}
+
+function severityToBorder(severity) {
+  if (severity === 'danger') return { borderClass: 'border-danger', badgeClass: 'badge-danger' };
+  if (severity === 'warning') return { borderClass: 'border-warning', badgeClass: 'badge-warning' };
+  if (severity === 'neutral') return { borderClass: 'border-default', badgeClass: 'badge-neutral' };
+  return { borderClass: 'border-success', badgeClass: 'badge-success' };
+}
 
 export default function AgentCard({ agentId, data, onClick }) {
   const Icon = ICONS[agentId] || ShieldCheck;
   const title = TITLES[agentId] || agentId;
   const { status, riskScore, qualityScore, overallScore, flags, analysis, error } = data;
 
-  // Some agents use riskScore (0 = Safe, 100 = Scam)
-  // Others use qualityScore (0 = Bad, 100 = Excellent)
-  // remoteResult uses neither natively for the badge, just boolean flags.
-  let isRiskBased = agentId === 'linguisticResult' || agentId === 'footprintResult' || agentId === 'patternResult' || agentId === 'adversarialResult';
-  let isQualityBased = agentId === 'companyResult' || agentId === 'opportunityResult' || agentId === 'activityResult';
+  const hasRisk = typeof riskScore === 'number';
+  const hasQuality = typeof qualityScore === 'number';
+  const isDualScore = DUAL_SCORE_AGENTS.has(agentId);
+  const isRiskOnly = hasRisk && !hasQuality;
+  const isQualityOnly = hasQuality && !hasRisk;
 
   // Styling logic
   const isComplete = status === 'complete';
@@ -43,39 +97,11 @@ export default function AgentCard({ agentId, data, onClick }) {
 
   let borderClass = 'border-default';
   let badgeClass = 'badge-neutral';
-  
+
   if (isComplete) {
-    if (isRiskBased) {
-      if ((riskScore ?? 0) >= 70) {
-        borderClass = 'border-danger';
-        badgeClass = 'badge-danger';
-      } else if ((riskScore ?? 0) >= 40) {
-        borderClass = 'border-warning';
-        badgeClass = 'badge-warning';
-      } else {
-        borderClass = 'border-success';
-        badgeClass = 'badge-success';
-      }
-    } else if (isQualityBased) {
-      if ((qualityScore ?? 0) >= 75) {
-        borderClass = 'border-success';
-        badgeClass = 'badge-success';
-      } else if ((qualityScore ?? 0) >= 40) {
-        borderClass = 'border-warning';
-        badgeClass = 'badge-warning';
-      } else {
-        borderClass = 'border-danger';
-        badgeClass = 'badge-danger';
-      }
-    } else if (agentId === 'remoteResult') {
-      if (data.isGenuineRemote) {
-        borderClass = 'border-success';
-        badgeClass = 'badge-success';
-      } else {
-        borderClass = 'border-warning';
-        badgeClass = 'badge-warning';
-      }
-    }
+    const { borderClass: sevBorder, badgeClass: sevBadge } = severityToBorder(cardSeverity(agentId, data));
+    borderClass = sevBorder;
+    badgeClass = sevBadge;
   } else if (isAnalyzing) {
     borderClass = 'border-active';
     badgeClass = 'badge-active';
@@ -124,7 +150,7 @@ export default function AgentCard({ agentId, data, onClick }) {
               <div className="progress-bar-fill animate-pulse-glow"></div>
             </div>
             <div className="analyzing-text">
-              Extracting evidence...
+              Verifying remote-job signals...
             </div>
           </div>
         )}
@@ -132,17 +158,47 @@ export default function AgentCard({ agentId, data, onClick }) {
         {isComplete && (
           <div className="agent-complete-state animate-slide-up">
             <div className="score-display">
-              {isRiskBased && riskScore !== undefined && (
+              {isDualScore && hasRisk && hasQuality && (
+                <div className="agent-dual-scores">
+                  <div className="agent-score-line">
+                    <span className={`score-number font-display tone-${severityFor(riskScore, 'risk')}`}>{riskScore}</span>
+                    <span className="score-label">/100 · {AGENT_RISK_LABELS[agentId]}</span>
+                  </div>
+                  <div className="agent-score-line">
+                    <span className={`score-number font-display tone-${severityFor(qualityScore, 'quality')}`}>{qualityScore}</span>
+                    <span className="score-label">/100 · {AGENT_QUALITY_LABELS[agentId]}</span>
+                  </div>
+                </div>
+              )}
+              {isRiskOnly && (
                 <>
-                  <span className="score-number font-display">{riskScore}</span>
-                  <span className="score-label">/100 Risk</span>
+                  <span className={`score-number font-display tone-${severityFor(riskScore, 'risk')}`}>{riskScore}</span>
+                  <span className="score-label">/100 · {AGENT_RISK_LABELS[agentId] || 'Agent Risk'}</span>
                 </>
               )}
-              {isQualityBased && qualityScore !== undefined && (
+              {isQualityOnly && (
                 <>
-                  <span className="score-number font-display">{qualityScore}</span>
-                  <span className="score-label">/100 Quality</span>
+                  <span className={`score-number font-display tone-${severityFor(qualityScore, 'quality')}`}>{qualityScore}</span>
+                  <span className="score-label">/100 · {AGENT_QUALITY_LABELS[agentId] || 'Agent Quality'}</span>
                 </>
+              )}
+              {agentId === 'adversarialResult' && data.challengeSucceeded !== undefined && (
+                <div className="agent-dual-scores">
+                  <div className="agent-score-line">
+                    <span className={`score-number font-display tone-${cardSeverity(agentId, data)}`}>
+                      {data.challengeSucceeded ? 'Succeeded' : 'Failed'}
+                    </span>
+                    <span className="score-label">· Devil&apos;s advocate challenge</span>
+                  </div>
+                  {typeof data.confidenceAdjustment === 'number' && (
+                    <div className="agent-score-line">
+                      <span className={`score-number font-display tone-${data.confidenceAdjustment < 0 ? 'warning' : data.confidenceAdjustment > 0 ? 'success' : 'neutral'}`}>
+                        {data.confidenceAdjustment > 0 ? '+' : ''}{data.confidenceAdjustment}
+                      </span>
+                      <span className="score-label">· Trust score adjustment</span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             
@@ -153,10 +209,21 @@ export default function AgentCard({ agentId, data, onClick }) {
             )}
 
             {/* Quick Insights directly on the card */}
-            <div className="agent-quick-insights" style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="agent-quick-insights">
               {agentId === 'companyResult' && data.companyExists !== undefined && (
                 <span className={`evidence-badge badge-${data.companyExists ? 'success' : 'danger'}`}>
                   {data.companyExists ? 'Registered Entity' : 'No Entity Found'}
+                </span>
+              )}
+              {agentId === 'companyResult' && data.recentLayoffsDetected && (
+                <span className={`evidence-badge badge-${data.layoffSeverity === 'major' ? 'danger' : 'warning'}`}>
+                  {data.layoffSeverity === 'major' ? 'Recent major layoffs' : 'Recent layoffs'}
+                </span>
+              )}
+              {agentId === 'companyResult' && data.fundingStage && data.fundingStage !== 'unknown' && (
+                <span className="evidence-badge badge-success">
+                  Funding: {String(data.fundingStage).replace(/_/g, ' ')}
+                  {data.lastFundingYear ? ` (${data.lastFundingYear})` : ''}
                 </span>
               )}
               {agentId === 'footprintResult' && data.domainAgeDays !== undefined && (
@@ -169,9 +236,43 @@ export default function AgentCard({ agentId, data, onClick }) {
                   {data.isTooGoodToBeTrue ? 'Unrealistic Pay' : 'Fair Pay'}
                 </span>
               )}
-              {agentId === 'linguisticResult' && data.flaggedPhrases && (
+              {agentId === 'opportunityResult' && data.salaryRangeDisclosed !== undefined && (
+                <span className={`evidence-badge badge-${data.salaryRangeDisclosed ? 'success' : 'neutral'}`}>
+                  {data.salaryRangeDisclosed ? 'Salary disclosed' : 'Salary undisclosed'}
+                </span>
+              )}
+              {agentId === 'opportunityResult' && data.compensationParityWithRemoteMarket && data.compensationParityWithRemoteMarket !== 'unknown' && (
+                <span className={`evidence-badge badge-${
+                  data.compensationParityWithRemoteMarket === 'above' ? 'success'
+                  : data.compensationParityWithRemoteMarket === 'at' ? 'success'
+                  : 'warning'
+                }`}>
+                  Pay {data.compensationParityWithRemoteMarket} remote-market
+                </span>
+              )}
+              {agentId === 'opportunityResult' && Array.isArray(data.unrealisticRequirementsList) && data.unrealisticRequirementsList.length > 0 && (
+                <span className="evidence-badge badge-danger">
+                  Unrealistic requirements
+                </span>
+              )}
+              {agentId === 'opportunityResult' && data.wfhStipendMentioned && (
+                <span className="evidence-badge badge-success">
+                  WFH stipend
+                </span>
+              )}
+              {agentId === 'linguisticResult' && Array.isArray(data.flaggedPhrases) && data.flaggedPhrases.length > 0 && (
                 <span className="evidence-badge badge-warning">
-                  {data.flaggedPhrases.length} manipulative phrases
+                  {data.flaggedPhrases.length} manipulative phrase{data.flaggedPhrases.length === 1 ? '' : 's'}
+                </span>
+              )}
+              {agentId === 'linguisticResult' && data.hasAsyncCultureSignals && (
+                <span className="evidence-badge badge-success">
+                  Async culture
+                </span>
+              )}
+              {agentId === 'patternResult' && data.scamTypeMatched === 'none' && (
+                <span className="evidence-badge badge-success">
+                  No scam template
                 </span>
               )}
               {agentId === 'patternResult' && data.scamTypeMatched && data.scamTypeMatched !== 'none' && (
@@ -179,7 +280,7 @@ export default function AgentCard({ agentId, data, onClick }) {
                   Template: {data.scamTypeMatched.replace(/_/g, ' ')}
                 </span>
               )}
-              {agentId === 'remoteResult' && data.isGenuineRemote !== undefined && (
+              {agentId === 'opportunityResult' && data.isGenuineRemote !== undefined && (
                 <span className={`evidence-badge badge-${data.isGenuineRemote ? 'success' : 'warning'}`}>
                   {data.isGenuineRemote ? '100% Remote' : 'Not Fully Remote'}
                 </span>
@@ -189,10 +290,51 @@ export default function AgentCard({ agentId, data, onClick }) {
                   {data.isActivelyMonitored ? 'Actively Monitored' : 'Passive Listing'}
                 </span>
               )}
-              {agentId === 'adversarialResult' && data.challengeSucceeded !== undefined && (
-                <span className={`evidence-badge badge-${data.challengeSucceeded ? 'warning' : 'neutral'}`}>
-                  Challenge {data.challengeSucceeded ? 'Succeeded' : 'Failed'}
+              {agentId === 'activityResult' && data.interviewProcessDescribed && (
+                <span className="evidence-badge badge-success">
+                  Interview: {data.numberOfStages ? `${data.numberOfStages} stages` : 'described'}
                 </span>
+              )}
+              {agentId === 'activityResult' && typeof data.daysOld === 'number' && (
+                <span className={`evidence-badge badge-${data.daysOld > 60 ? 'warning' : 'success'}`}>
+                  Posted {data.daysOld}d ago
+                </span>
+              )}
+              {agentId === 'activityResult' && data.isRepost && (
+                <span className="evidence-badge badge-warning">
+                  Reposted
+                </span>
+              )}
+              {agentId === 'activityResult' && data.applicantDemandSignal && data.applicantDemandSignal !== 'unknown' && (
+                <span className={`evidence-badge badge-${
+                  data.applicantDemandSignal === 'high' ? 'success'
+                  : data.applicantDemandSignal === 'normal' ? 'neutral'
+                  : 'warning'
+                }`}>
+                  Applicants: {data.applicantDemandSignal.replace('_', ' ')}
+                </span>
+              )}
+              {agentId === 'activityResult' && data.posterAppearsCredible && (
+                <span className="evidence-badge badge-success">
+                  Credible poster
+                </span>
+              )}
+              {agentId === 'adversarialResult' && data.challengeSucceeded !== undefined && (
+                <>
+                  <span className={`evidence-badge badge-${
+                    !data.challengeSucceeded ? 'neutral'
+                    : (data.confidenceAdjustment ?? 0) < 0 ? 'warning'
+                    : (data.confidenceAdjustment ?? 0) > 0 ? 'success'
+                    : 'warning'
+                  }`}>
+                    Challenge {data.challengeSucceeded ? 'succeeded' : 'failed'}
+                  </span>
+                  {data.challengeSucceeded && typeof data.confidenceAdjustment === 'number' && data.confidenceAdjustment !== 0 && (
+                    <span className={`evidence-badge badge-${data.confidenceAdjustment < 0 ? 'warning' : 'success'}`}>
+                      Trust {data.confidenceAdjustment > 0 ? '+' : ''}{data.confidenceAdjustment}
+                    </span>
+                  )}
+                </>
               )}
             </div>
 

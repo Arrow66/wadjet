@@ -72,11 +72,30 @@ function releaseSlot() {
   }
 }
 
+// ── Prompt Input Shape ─────────────────────────────────────────────
+// Accepts either a single string (legacy) or a {system, user} pair so
+// the static methodology can ride along Gemini's implicit prefix cache
+// while the dynamic job data stays in the contents body.
+
+export type PromptInput = string | { system?: string; user: string };
+
+function splitPrompt(input: PromptInput): { system: string; user: string } {
+  if (typeof input === 'string') return { system: '', user: input };
+  return { system: input.system ?? '', user: input.user };
+}
+
+function cacheKeyFor(system: string, user: string): string {
+  return system ? `[SYS]\n${system}\n[USR]\n${user}` : user;
+}
+
 // ── Structured Output (Agents 1, 3, 5, Gatekeeper, Report) ─────────
 
-async function callGeminiStructured(prompt: string, schema: any, model: string = DEFAULT_MODEL): Promise<any> {
+async function callGeminiStructured(input: PromptInput, schema: any, model: string = DEFAULT_MODEL): Promise<any> {
+  const { system, user } = splitPrompt(input);
+
   // 1. Check cache first (saves tokens on repeat investigations)
-  const cached = getCachedLLMResponse(prompt);
+  const cacheKey = cacheKeyFor(system, user);
+  const cached = getCachedLLMResponse(cacheKey);
   if (cached) return cached;
 
   // 2. Mock mode — return empty structured object
@@ -87,25 +106,29 @@ async function callGeminiStructured(prompt: string, schema: any, model: string =
 
   // 3. Real API call with rate limiting + exponential backoff
   const run = async () => {
-    // Zod 4 natively supports generating JSON Schema
+    // Zod 4 natively supports generating JSON Schema. We pass this ONLY via
+    // config.responseSchema (server-side enforcement). The old code also
+    // appended the schema to the prompt text, which was redundant — Gemini
+    // already constrains output to the responseSchema. Dropping that copy
+    // saves 300–1500 input tokens per call.
     const jsonSchema = (schema as any).toJSONSchema();
-    delete jsonSchema.$schema; // Remove schema declaration as some LLMs reject it
+    delete jsonSchema.$schema; // Some Gemini versions reject this field
 
-    // Inject the schema into the prompt to guarantee the LLM follows it
-    const promptWithSchema = `${prompt}\n\nYou MUST return a raw JSON object adhering EXACTLY to this JSON schema:\n${JSON.stringify(jsonSchema, null, 2)}`;
+    console.log(`\n\n========== GEMINI STRUCTURED PROMPT ==========\n[SYSTEM]\n${system}\n[USER]\n${user}\n============================================\n\n`);
 
-    console.log(`\n\n========== GEMINI STRUCTURED PROMPT ==========\n${promptWithSchema}\n============================================\n\n`);
+    const config: any = {
+      responseMimeType: "application/json",
+      responseSchema: jsonSchema,
+    };
+    if (system) config.systemInstruction = system;
 
     // Acquire a rate-limiter slot before making the API call
     await acquireSlot();
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: promptWithSchema,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: jsonSchema,
-        },
+        contents: user,
+        config,
       });
 
       try {
@@ -130,7 +153,7 @@ async function callGeminiStructured(prompt: string, schema: any, model: string =
         const parsed = schema.parse(unwrappedJson);
 
         // Cache the successful response
-        setCachedLLMResponse(prompt, parsed, model);
+        setCachedLLMResponse(cacheKey, parsed, model);
         return parsed;
       } catch (e: any) {
         console.error('[Gemini] Schema validation failed. Retrying...', e.message);
@@ -144,20 +167,49 @@ async function callGeminiStructured(prompt: string, schema: any, model: string =
   return pRetry(run, {
     retries: 3,
     minTimeout: 3000, // Wait at least 3s between retries to avoid re-triggering rate limits
-    onFailedAttempt: (error: any) => {
-      console.log(`Gemini API attempt ${error.attemptNumber} failed. ${error.retriesLeft} retries left.`);
-      if (error.status && error.status >= 400 && error.status < 500 && error.status !== 429) {
-        throw error; // Abort on non-retryable 4xx errors
-      }
-    }
+    onFailedAttempt: (error: any) => logGeminiError('STRUCTURED', error),
   });
 }
 
-// ── Grounded Search (Agents 2, 6) ──────────────────────────────────
+// Walks the error object surface and prints the bits that actually tell us
+// what went wrong (status code, Gemini reason, HTTP body). The @google/genai
+// library buries the real message inside `error.message` as a JSON-ish blob,
+// so we try to surface that too. Without this, every failure looked
+// indistinguishable from any other.
+function logGeminiError(kind: 'STRUCTURED' | 'GROUNDED', error: any) {
+  const status = error?.status ?? error?.response?.status ?? error?.cause?.status ?? null;
+  const code = error?.code ?? error?.errorDetails?.[0]?.reason ?? null;
+  const msg = error?.message || String(error);
+  const attempt = error?.attemptNumber ?? '?';
+  const left = error?.retriesLeft ?? '?';
+  console.error(`[Gemini ${kind}] attempt ${attempt} failed (retries left: ${left})`);
+  if (status) console.error(`  → HTTP status: ${status}`);
+  if (code) console.error(`  → code: ${code}`);
+  console.error(`  → message: ${msg.slice(0, 1200)}`);
 
-async function callGeminiGrounded(prompt: string, model: string = DEFAULT_MODEL): Promise<any> {
+  // Hint at likely root causes so the user sees actionable diagnostics inline.
+  if (String(status) === '429' || /quota|RESOURCE_EXHAUSTED|rate.?limit/i.test(msg)) {
+    console.error('  → likely: free-tier daily/RPM quota hit. Switch model, wait, or set MOCK_MODE=true.');
+  } else if (String(status).startsWith('4') && status !== 429) {
+    console.error('  → likely: API key invalid OR model name unsupported OR schema rejected.');
+  } else if (/timeout|ECONN|ENOTFOUND|fetch failed/i.test(msg)) {
+    console.error('  → likely: network failure reaching Google. Check connectivity.');
+  } else if (/safety|blocked|finishReason/i.test(msg)) {
+    console.error('  → likely: response was blocked by Gemini safety filters.');
+  }
+}
+
+// ── Grounded Search (Agents 2, 6) ──────────────────────────────────
+// NOTE: Gemini does not allow combining `tools: [googleSearch]` with
+// `responseSchema`, so grounded calls keep the JSON shape embedded in the
+// user content. We still split system/user to engage prefix caching.
+
+async function callGeminiGrounded(input: PromptInput, model: string = DEFAULT_MODEL): Promise<any> {
+  const { system, user } = splitPrompt(input);
+
   // 1. Check cache
-  const cached = getCachedLLMResponse(prompt);
+  const cacheKey = cacheKeyFor(system, user);
+  const cached = getCachedLLMResponse(cacheKey);
   if (cached) return cached;
 
   // 2. Mock mode
@@ -168,17 +220,20 @@ async function callGeminiGrounded(prompt: string, model: string = DEFAULT_MODEL)
 
   // 3. Real API call with rate limiting
   const run = async () => {
-    console.log(`\n\n========== GEMINI GROUNDED PROMPT ==========\n${prompt}\n==========================================\n\n`);
+    console.log(`\n\n========== GEMINI GROUNDED PROMPT ==========\n[SYSTEM]\n${system}\n[USER]\n${user}\n==========================================\n\n`);
+
+    const config: any = {
+      tools: [{ googleSearch: {} }],
+    };
+    if (system) config.systemInstruction = system;
 
     // Acquire a rate-limiter slot before making the API call
     await acquireSlot();
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
+        contents: user,
+        config,
       });
       console.log("Full Gemini Grounded Response", JSON.stringify(response, null, 2));
 
@@ -196,7 +251,7 @@ async function callGeminiGrounded(prompt: string, model: string = DEFAULT_MODEL)
       };
 
       // Cache the successful response
-      setCachedLLMResponse(prompt, result, model);
+      setCachedLLMResponse(cacheKey, result, model);
       return result;
     } finally {
       releaseSlot();
@@ -205,7 +260,8 @@ async function callGeminiGrounded(prompt: string, model: string = DEFAULT_MODEL)
 
   return pRetry(run, {
     retries: 3,
-    minTimeout: 3000 // Wait at least 3s between retries
+    minTimeout: 3000, // Wait at least 3s between retries
+    onFailedAttempt: (error: any) => logGeminiError('GROUNDED', error),
   });
 }
 

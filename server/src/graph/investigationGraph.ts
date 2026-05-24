@@ -25,7 +25,7 @@ async function scrapeNode(state) {
 }
 
 async function gatekeeperNode(state) {
-  const jobData = await runGatekeeperNode(state.rawMarkdown);
+  const jobData = await runGatekeeperNode(state.rawMarkdown, state.extensionMetadata);
   return { jobData };
 }
 
@@ -33,9 +33,13 @@ async function gatekeeperNode(state) {
 async function linguisticNode(state) { return { linguisticResult: await runLinguisticAgent(state.jobData) }; }
 async function companyNode(state) { return { companyResult: await runCompanyAgent(state.jobData) }; }
 async function opportunityNode(state) { return { opportunityResult: await runOpportunityAgent(state.jobData) }; }
-async function footprintNode(state) { return { footprintResult: await runDigitalFootprintAgent(state.jobData, state.url) }; }
+async function footprintNode(state) {
+  return {
+    footprintResult: await runDigitalFootprintAgent(state.jobData, state.url, state.companyResult),
+  };
+}
 async function patternNode(state) { return { patternResult: await runPatternAgent(state.jobData) }; }
-async function activityNode(state) { return { activityResult: await runActivityAgent(state.jobData) }; }
+async function activityNode(state) { return { activityResult: await runActivityAgent(state.jobData, state.url) }; }
 
 // Wrapper for adversarial
 async function adversarialNode(state) { 
@@ -96,8 +100,13 @@ const agents = [
 ];
 
 for (const agent of agents) {
+  if (agent === 'agent_footprint' || agent === 'agent_company') continue;
   workflow.addEdge("gatekeeper", agent);
 }
+
+// Footprint runs after Company so it can WHOIS the employer domain from grounded search evidence.
+workflow.addEdge("gatekeeper", "agent_company");
+workflow.addEdge("agent_company", "agent_footprint");
 
 workflow.addEdge(agents, "pre_scorer");
 

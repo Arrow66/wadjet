@@ -5,18 +5,20 @@ import { getLinguisticPrompt } from '../../prompts/index.js';
 import { calculateLinguisticScore } from '../../rubrics/index.js';
 
 const LinguisticSchema = z.object({
-  reasoningSteps: z.array(z.string()).describe("A step-by-step log of your reasoning process. Provide exactly 3-4 steps."),
-  hasUrgency: z.boolean().describe("True if the text contains high urgency markers like 'Hiring immediately' or 'Act fast'"),
-  hasVagueness: z.boolean().describe("True if duties are extremely vague while claiming high pay"),
-  hasMoneyFirst: z.boolean().describe("True if compensation is wildly exaggerated or the primary focus"),
-  hasGrammarIssues: z.boolean().describe("True if there are excessive exclamation points, all caps, or highly unprofessional grammar"),
-  hasPiiRequest: z.boolean().describe("True if asking for SSN, bank details, or upfront payment in the description"),
+  reasoningSteps: z.array(z.string()).describe("3-4 step reasoning log."),
+  hasUrgency: z.boolean().describe("True for urgency markers like 'Hiring immediately'."),
+  hasVagueness: z.boolean().describe("True if duties are vague while claiming high pay."),
+  hasMoneyFirst: z.boolean().describe("True if compensation is exaggerated/the primary focus."),
+  hasGrammarIssues: z.boolean().describe("True for excessive '!!!', ALL CAPS, or unprofessional grammar."),
+  hasPiiRequest: z.boolean().describe("True if SSN, bank details, or upfront payment is requested."),
+  hasAsyncCultureSignals: z.boolean().describe("True for explicit async-culture phrase OR 2+ remote-stack tools (see system instructions)."),
+  asyncCultureEvidence: z.string().nullable().describe("Verbatim phrase(s) justifying the signal. Null if false."),
   flaggedPhrases: z.array(z.object({
-    phrase: z.string().describe("The EXACT VERBATIM quote from the text that triggered this flag."),
+    phrase: z.string().describe("Exact verbatim quote that triggered the flag."),
     category: z.enum(['Urgency', 'Vagueness', 'Money-First', 'Grammar', 'PII Request', 'Unprofessional Comms']),
-    severity: z.enum(['warning', 'high']).describe("PII and Money-First are 'high'. Grammar is 'warning'."),
-    explanation: z.string().describe("1 short sentence explaining why this phrase is suspicious.")
-  })).describe("A list of all suspicious phrases found in the text.")
+    severity: z.enum(['warning', 'high']).describe("PII/Money-First = 'high'; Grammar = 'warning'."),
+    explanation: z.string().describe("1 short sentence on why it's suspicious.")
+  })).describe("All suspicious phrases found.")
 });
 
 async function runLinguisticAgent(jobData: any) {
@@ -27,32 +29,37 @@ async function runLinguisticAgent(jobData: any) {
     return MOCK_LINGUISTIC;
   }
 
-  const prompt = getLinguisticPrompt(jobData);
+  const parts = getLinguisticPrompt(jobData);
 
   try {
-    const rawResult = await callGeminiStructured(prompt, LinguisticSchema);
+    const rawResult = await callGeminiStructured(parts, LinguisticSchema);
     
     // Apply deterministic rubric
     const rubricResult = calculateLinguisticScore(rawResult);
 
-    console.log(`[Agent 1: Linguistic] Complete. Risk Score: ${rubricResult.riskScore}/100`);
+    console.log(`[Agent 1: Linguistic] Complete. Risk Score: ${rubricResult.riskScore}/100. Quality Score: ${rubricResult.qualityScore}/100.`);
     return {
       ...rawResult,
       riskScore: rubricResult.riskScore,
-      analysis: rubricResult.explanation
+      qualityScore: rubricResult.qualityScore,
+      analysis: rubricResult.explanation,
+      scoreBreakdown: rubricResult.breakdown,
     };
   } catch (error) {
     console.error('[Agent 1: Linguistic] Error:', error);
     // Fallback if structured parsing fails
-    return { 
+    return {
       reasoningSteps: ["Error occurred during linguistic analysis."],
       hasUrgency: false,
       hasVagueness: false,
       hasMoneyFirst: false,
       hasGrammarIssues: false,
       hasPiiRequest: false,
-      riskScore: 50, 
-      analysis: "Could not complete linguistic analysis." 
+      hasAsyncCultureSignals: false,
+      asyncCultureEvidence: null,
+      riskScore: 50,
+      qualityScore: 0,
+      analysis: "Could not complete linguistic analysis."
     };
   }
 }

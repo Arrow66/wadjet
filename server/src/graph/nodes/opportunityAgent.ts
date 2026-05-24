@@ -12,6 +12,7 @@ export const OpportunitySchema = z.object({
   is100PercentRemote: z.boolean().describe("True if the job is explicitly stated to be 100% remote"),
   hasGeoRestriction: z.boolean().describe("True if there are geographical requirements (e.g. 'US only', 'PST timezone')"),
   hasInOfficeRequirement: z.boolean().describe("True if there are hidden in-office or travel requirements"),
+  compensationParityWithRemoteMarket: z.enum(['above', 'at', 'below', 'unknown']).describe("Pay parity with the global remote market median for this title/seniority. 'unknown' if salary undisclosed or unjudgeable."),
   evidence: z.array(z.object({
     source: z.string().describe("E.g., 'Compensation', 'Location Requirement'"),
     finding: z.string().describe("The exact finding, e.g., 'Requires 20% travel to HQ'"),
@@ -37,6 +38,7 @@ export async function runOpportunityAgent(jobData: any) {
       is100PercentRemote: true,
       hasGeoRestriction: false,
       hasInOfficeRequirement: false,
+      compensationParityWithRemoteMarket: (MOCK_OPPORTUNITY as any).compensationParityWithRemoteMarket || 'unknown',
       evidence: [],
       isGenuineRemote: true,
       riskScore: MOCK_OPPORTUNITY.riskScore,
@@ -47,19 +49,19 @@ export async function runOpportunityAgent(jobData: any) {
 
   // Step 1: Live Grounded Search for Market Context
   console.log(`[Agent: Opportunity] Fetching live market data for "${jobData.jobTitle}"...`);
-  const marketSearchPrompt = `
-You are a compensation researcher. Use Google Search to find the current median salary for the job title "${jobData.jobTitle}".
-IMPORTANT: Check the job description provided below to see if a specific country, region, or currency is mentioned. If it is, find the median salary for THAT specific region and return it in the local currency. If the job is globally remote, state the general global remote average.
-Return ONLY a 1-2 sentence summary of the median salary and whether this role is typically remote. Do not return JSON.
+  const marketSystem = `You are a compensation researcher. Use Google Search to find the current median salary for a given job title.
+If the description mentions a specific country, region, or currency, return the median for THAT region in the local currency.
+If the job is globally remote, return the general global remote average.
+Return ONLY a 1-2 sentence summary of the median salary and whether this role is typically remote. Do not return JSON.`;
+  const marketUser = `Job Title: ${jobData.jobTitle}
 
 Job Description Context:
-${jobData.condensedDescription}
-  `;
+${jobData.condensedDescription}`;
   
   let liveMarketData = "Market data unavailable.";
   if (process.env.MOCK_MODE !== 'true') {
     try {
-      const marketResult = await callGeminiGrounded(marketSearchPrompt);
+      const marketResult = await callGeminiGrounded({ system: marketSystem, user: marketUser });
       liveMarketData = marketResult.data?.rawResponse || JSON.stringify(marketResult.data) || "Market data unavailable.";
       console.log(`[Agent: Opportunity] Fetched Market Context: ${liveMarketData}`);
     } catch (error) {
@@ -69,21 +71,38 @@ ${jobData.condensedDescription}
     liveMarketData = "Mock Market Data: Median salary is $150k USD globally.";
   }
 
-  const prompt = getOpportunityPrompt(jobData, liveMarketData);
+  const parts = getOpportunityPrompt(jobData, liveMarketData);
 
   try {
-    const rawResult = await callGeminiStructured(prompt, OpportunitySchema);
-    
-    // Apply deterministic rubric
-    const rubricResult = calculateOpportunityScore(rawResult);
+    const rawResult = await callGeminiStructured(parts, OpportunitySchema);
+
+    // Apply deterministic rubric. We merge gatekeeper-extracted jobData fields
+    // (salary disclosure, skill counts, WFH stipend) so the rubric sees the full picture.
+    const rubricResult = calculateOpportunityScore({
+      ...rawResult,
+      salaryRangeDisclosed: jobData?.salaryRangeDisclosed,
+      requiredSkillsCount: jobData?.requiredSkillsCount,
+      niceToHaveSkillsCount: jobData?.niceToHaveSkillsCount,
+      unrealisticRequirementsList: jobData?.unrealisticRequirementsList,
+      wfhStipendMentioned: jobData?.wfhStipendMentioned,
+    });
 
     console.log(`[Agent: Opportunity] Complete. Quality Score: ${rubricResult.qualityScore}/100, Risk Score: ${rubricResult.riskScore}/100, Genuine Remote: ${rubricResult.isGenuineRemote}`);
     return {
       ...rawResult,
+      // Echo gatekeeper-derived fields onto the result so the frontend can render badges.
+      salaryRangeDisclosed: jobData?.salaryRangeDisclosed ?? false,
+      salaryRangeText: jobData?.salaryRangeText ?? null,
+      requiredSkillsCount: jobData?.requiredSkillsCount ?? 0,
+      niceToHaveSkillsCount: jobData?.niceToHaveSkillsCount ?? 0,
+      unrealisticRequirementsList: jobData?.unrealisticRequirementsList ?? [],
+      wfhStipendMentioned: jobData?.wfhStipendMentioned ?? false,
+      wfhStipendDetails: jobData?.wfhStipendDetails ?? null,
       isGenuineRemote: rubricResult.isGenuineRemote,
       riskScore: rubricResult.riskScore,
       qualityScore: rubricResult.qualityScore,
-      analysis: rubricResult.explanation
+      analysis: rubricResult.explanation,
+      scoreBreakdown: rubricResult.breakdown,
     };
   } catch (error) {
     console.error('[Agent: Opportunity] Failed:', error);
@@ -95,6 +114,7 @@ ${jobData.condensedDescription}
       is100PercentRemote: false,
       hasGeoRestriction: false,
       hasInOfficeRequirement: false,
+      compensationParityWithRemoteMarket: 'unknown',
       evidence: [],
       isGenuineRemote: false,
       riskScore: 50,

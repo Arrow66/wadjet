@@ -33,10 +33,10 @@ async function runPatternAgent(jobData: any) {
     return MOCK_PATTERN;
   }
 
-  const prompt = getPatternPrompt(jobData);
+  const parts = getPatternPrompt(jobData);
 
   try {
-    const rawResult = await callGeminiStructured(prompt, PatternSchema);
+    const rawResult = await callGeminiStructured(parts, PatternSchema);
     
     // Apply deterministic rubric
     const rubricResult = calculatePatternScore(rawResult);
@@ -45,7 +45,8 @@ async function runPatternAgent(jobData: any) {
     return {
       ...rawResult,
       riskScore: rubricResult.riskScore,
-      analysis: rubricResult.explanation
+      analysis: rubricResult.explanation,
+      scoreBreakdown: rubricResult.breakdown,
     };
   } catch (error) {
     console.error('[Agent 5: Pattern] Failed:', error);

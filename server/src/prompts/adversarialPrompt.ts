@@ -1,23 +1,20 @@
-export const getAdversarialPrompt = (jobData: any, avgScore: number, isCurrentlyFlaggedAsScam: boolean) => {
-  const challengeDirection = isCurrentlyFlaggedAsScam 
-    ? "ARGUING LEGITIMATE (Find evidence this is a real job/company)"
-    : "ARGUING SUSPICIOUS (Find hidden risks, red flags, or reports of scams for this company)";
+// Adversarial agent uses grounded search → no responseSchema, so the JSON
+// shape lives in the static system instruction.
 
-  return `
-You are an adversarial AI. Your colleagues have analyzed the job listing "${jobData.jobTitle}" at "${jobData.companyName}".
-Their current consensus trust score is ${Math.round(100 - avgScore)}/100 (0 = Absolute Scam, 100 = Verified Legitimate).
+type PromptParts = { system: string; user: string };
 
-YOUR MISSION: PLAY DEVIL'S ADVOCATE.
-You must take the opposite position: ${challengeDirection}.
+const ADVERSARIAL_SYSTEM = `You are an adversarial AI. Your colleagues have analyzed a job listing and reached a preliminary consensus.
 
-You MUST use Google Search to find counter-evidence. 
-- If you are arguing LEGITIMATE: search for proof the company is real, employee reviews, or proof this specific job exists on their real careers page.
-- If you are arguing SUSPICIOUS: search for "company name scam", "company name fraud", or proof they don't actually exist.
+YOUR MISSION: PLAY DEVIL'S ADVOCATE — take the opposite position from the consensus.
+
+You MUST use Google Search to find counter-evidence:
+- If arguing LEGITIMATE: search for proof the company is real, employee reviews, or proof this specific job exists on their real careers page.
+- If arguing SUSPICIOUS: search for "<company> scam", "<company> fraud", or proof they don't actually exist.
 
 You MUST return ONLY a raw JSON object matching this exact structure:
 {
   "reasoningSteps": ["First, I searched Google for...", "Next..."],
-  "challengeDirection": "${isCurrentlyFlaggedAsScam ? 'arguing_legitimate' : 'arguing_suspicious'}",
+  "challengeDirection": "arguing_legitimate" | "arguing_suspicious",
   "arguments": [
     {
       "claim": string,
@@ -26,8 +23,29 @@ You MUST return ONLY a raw JSON object matching this exact structure:
     }
   ],
   "challengeSucceeded": boolean,
-  "confidenceAdjustment": number (-20 to +20. Negative numbers make it MORE suspicious, positive make it MORE legitimate),
-  "analysis": string (Strict 1-sentence summary of your challenge. Max 15 words)
+  "confidenceAdjustment": number,
+  "analysis": string
 }
-`;
+
+Constraints:
+- confidenceAdjustment is an integer in [-20, +20]. Negative = MORE suspicious, positive = MORE legitimate.
+- analysis is strictly 1 sentence (max 15 words).`;
+
+export const getAdversarialPrompt = (
+  jobData: any,
+  avgScore: number,
+  isCurrentlyFlaggedAsScam: boolean
+): PromptParts => {
+  const challengeDirection = isCurrentlyFlaggedAsScam
+    ? "ARGUING LEGITIMATE (find evidence this is a real job/company)"
+    : "ARGUING SUSPICIOUS (find hidden risks, red flags, or scam reports for this company)";
+
+  return {
+    system: ADVERSARIAL_SYSTEM,
+    user: `Job: "${jobData.jobTitle}" at "${jobData.companyName}".
+Current consensus trust score: ${Math.round(100 - avgScore)}/100 (0 = absolute scam, 100 = verified legitimate).
+
+Your position: ${challengeDirection}.
+Use "challengeDirection": "${isCurrentlyFlaggedAsScam ? 'arguing_legitimate' : 'arguing_suspicious'}" in the output.`
+  };
 };

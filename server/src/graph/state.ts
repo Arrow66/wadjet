@@ -7,7 +7,11 @@ export const InvestigationState = new StateSchema({
   
   // 2. Extracted Data (from Jina Reader)
   rawMarkdown: z.string(),
-  
+
+  // 2b. Optional LinkedIn page metadata captured by the extension
+  //     (posted-date, applicant count, job poster). Threaded into jobData by the gatekeeper.
+  extensionMetadata: z.any().nullable(),
+
   // 3. Condensed Payload (from Gatekeeper)
   jobData: z.any().nullable(),
   
@@ -32,5 +36,10 @@ export const InvestigationState = new StateSchema({
   // 7. SHAP Contribution Waterfall & Provenance Guardrails
   trustContributions: z.any().nullable(),
   qualityContributions: z.any().nullable(),
-  provenanceFlags: z.any().nullable()
+  provenanceFlags: z.any().nullable(),
+
+  // 8. Full transparent calculation payload (weights, raw scores per agent,
+  // adversarial adjustment + direction, tier thresholds, pre/post-cap tier,
+  // and every guardrail with `fired`/`applied` flags). Powers the UI ledger.
+  calculation: z.any().nullable()
 });

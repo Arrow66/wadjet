@@ -15,30 +15,31 @@ const ReportSchema = z.object({
 export async function runReportNode(state) {
   console.log('[Report Node] Generating narrative case report...');
 
-  const prompt = `
-    You are the lead investigator at Eye. Write a concise narrative summary of this job investigation.
-    
-    VERDICT:
-    TrustScore: ${state.finalTrustScore}/100
-    Tier: ${state.tier} (${state.confidenceLevel})
-    
-    KEY EVIDENCE:
-    Linguistic Flags: ${JSON.stringify(state.linguisticResult?.flaggedPhrases?.map(f => f.phrase) || [])}
-    Company Evidence: ${state.companyResult?.analysis || 'None'}
-    Compensation: ${state.compensationResult?.analysis || 'None'}
-    Digital Footprint: ${state.footprintResult?.analysis || 'None'}
-    Pattern: ${state.patternResult?.analysis || 'None'}
-    Adversarial Challenge: ${state.adversarialResult?.analysis || 'None'}
-    
-    RULES:
-    1. Write a professional, definitive summary. 
-    2. Example Scam: "This listing matches a known advance-fee scam template. The employer's domain was registered yesterday and offers an unrealistic salary for this role."
-    3. Example Legit: "This role is verified. The company has a long-standing digital footprint and the listing uses standard, professional language with market-rate compensation."
-    4. MUST be under 40 words.
-  `;
+  const system = `You are the lead remote-job verifier at Wadjet. Write a concise narrative verdict on whether this is a high-quality, legitimate remote role.
+
+RULES:
+1. Frame every sentence around the remote-role decision: is the company real, is the role genuinely 100% remote, is pay at remote-market, is the hiring process professional?
+2. Example reject: "Skip this remote role — the listing matches a known advance-fee scam template, the employer's domain was registered last week, and the salary is unrealistic for any genuinely remote position."
+3. Example approve: "A verified remote role at an established company. Listing is professional, the role is genuinely 100% remote, pay is at remote-market parity, and the hiring process uses a standard ATS."
+4. Example caution: "Real company and legitimate role, but in-office days are required despite remote framing. Apply only if you can commute."
+5. MUST be under 40 words. Never use the word "job" alone — always "remote role", "remote position", or "remote opportunity".`;
+
+  const user = `REMOTE-ROLE VERDICT:
+Legitimacy Score: ${state.finalTrustScore}/100
+Remote Quality Score: ${state.finalQualityScore}/100
+Tier: ${state.tier} (${state.confidenceLevel})
+
+KEY EVIDENCE:
+Linguistic / scam-listing flags: ${JSON.stringify(state.linguisticResult?.flaggedPhrases?.map(f => f.phrase) || [])}
+Company (employer reputation, layoffs, funding): ${state.companyResult?.analysis || 'None'}
+Remote-role quality (pay, true-remote, requirements): ${state.opportunityResult?.analysis || 'None'}
+Digital footprint (domain age, email): ${state.footprintResult?.analysis || 'None'}
+Scam-template match: ${state.patternResult?.analysis || 'None'}
+Hiring-process health (ATS, recruiter, freshness): ${state.activityResult?.analysis || 'None'}
+Adversarial review: ${state.adversarialResult?.analysis || 'None'}`;
 
   try {
-    const report = await callGeminiStructured(prompt, ReportSchema);
+    const report = await callGeminiStructured({ system, user }, ReportSchema);
     console.log('[Report Node] Case report generated.');
     return {
       caseReport: report.caseReport
@@ -46,7 +47,7 @@ export async function runReportNode(state) {
   } catch (error) {
     console.error('[Report Node] Failed:', error);
     return {
-      caseReport: `Investigation complete. Final TrustScore: ${state.finalTrustScore}/100. See individual agent cards for details.`
+      caseReport: `Remote-role verification complete. Legitimacy: ${state.finalTrustScore}/100, Remote Quality: ${state.finalQualityScore}/100. See individual agent cards for the underlying signals.`
     };
   }
 }

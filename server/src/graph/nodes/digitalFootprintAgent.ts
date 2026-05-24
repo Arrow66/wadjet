@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { callGeminiStructured } from '../../services/gemini.js';
-import { getDomainInfo, extractDomain } from '../../services/whois.js';
+import { getDomainInfo } from '../../services/whois.js';
+import { resolveEmployerDomain, listingPlatformLabel } from '../../services/domainResolver.js';
 import { MOCK_FOOTPRINT } from '../../services/mockData.js';
 import { getFootprintPrompt } from '../../prompts/index.js';
 import { calculateFootprintScore } from '../../rubrics/index.js';
@@ -17,7 +18,11 @@ const FootprintSchema = z.object({
   })).describe("Detailed findings supporting your analysis")
 });
 
-async function runDigitalFootprintAgent(jobData: any, sourceUrl: string) {
+async function runDigitalFootprintAgent(
+  jobData: any,
+  sourceUrl: string,
+  companyResult?: { evidence?: Array<{ source?: string; url?: string }> } | null,
+) {
   console.log('[Agent 4: Footprint] Checking digital footprint and WHOIS...');
 
   if (process.env.MOCK_MODE === 'true') {
@@ -25,14 +30,13 @@ async function runDigitalFootprintAgent(jobData: any, sourceUrl: string) {
     return MOCK_FOOTPRINT;
   }
 
-  let targetDomain = null;
-  if (jobData.contactInfo && jobData.contactInfo.includes('@')) {
-    const match = jobData.contactInfo.match(/@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    if (match) targetDomain = match[0].substring(1);
-  }
-  
-  if (!targetDomain) {
-    targetDomain = extractDomain(sourceUrl);
+  const resolution = resolveEmployerDomain(jobData, sourceUrl, companyResult?.evidence);
+  const targetDomain = resolution.domain;
+
+  if (targetDomain) {
+    console.log(`[Agent 4: Footprint] WHOIS target: ${targetDomain} (from ${resolution.source})`);
+  } else if (resolution.isJobBoardListing) {
+    console.log(`[Agent 4: Footprint] No employer domain resolved from job-board listing (${resolution.listingHost})`);
   }
 
   let whoisData = { ageInDays: null as number | null, isPrivacyProtected: false };
@@ -40,24 +44,37 @@ async function runDigitalFootprintAgent(jobData: any, sourceUrl: string) {
     whoisData = await getDomainInfo(targetDomain);
   }
 
-  const prompt = getFootprintPrompt(targetDomain || '', whoisData, jobData);
+  const domainNote = !targetDomain && resolution.isJobBoardListing
+    ? `Listing is on ${listingPlatformLabel(resolution.listingHost) || resolution.listingHost || 'a job board'}. No employer domain found in contact info, description, or company search — WHOIS skipped (not the board URL).`
+    : targetDomain
+      ? `WHOIS checked employer domain ${targetDomain} (resolved from ${resolution.source.replace(/_/g, ' ')}).`
+      : null;
+
+  const parts = getFootprintPrompt(targetDomain || '', whoisData, jobData, resolution, domainNote);
 
   try {
-    const rawResult = await callGeminiStructured(prompt, FootprintSchema);
+    const rawResult = await callGeminiStructured(parts, FootprintSchema);
     
     // Apply deterministic rubric
     const rubricResult = calculateFootprintScore({
       domainAgeDays: whoisData.ageInDays,
       isFreeEmail: rawResult.isFreeEmail,
-      isPrivacyProtected: rawResult.isPrivacyProtected || whoisData.isPrivacyProtected
+      isPrivacyProtected: rawResult.isPrivacyProtected || whoisData.isPrivacyProtected,
+      employerDomainUnavailable: !targetDomain && resolution.isJobBoardListing,
     });
 
     console.log(`[Agent 4: Footprint] Complete. Risk Score: ${rubricResult.riskScore}/100`);
     return {
       ...rawResult,
       domainAgeDays: whoisData.ageInDays,
+      checkedDomain: targetDomain,
+      domainSource: resolution.source,
+      listingHost: resolution.listingHost,
+      isJobBoardListing: resolution.isJobBoardListing,
+      domainNote,
       riskScore: rubricResult.riskScore,
-      analysis: rubricResult.explanation
+      analysis: rubricResult.explanation,
+      scoreBreakdown: rubricResult.breakdown,
     };
   } catch (error) {
     console.error('[Agent 4: Footprint] Failed:', error);

@@ -32,10 +32,10 @@ async function runAdversarialAgent(jobData: any, agentResults: any) {
   const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
   const isCurrentlyFlaggedAsScam = avgScore > 50;
   
-  const prompt = getAdversarialPrompt(jobData, avgScore, isCurrentlyFlaggedAsScam);
+  const parts = getAdversarialPrompt(jobData, avgScore, isCurrentlyFlaggedAsScam);
 
   try {
-    const { data, groundingMetadata } = await callGeminiGrounded(prompt);
+    const { data, groundingMetadata } = await callGeminiGrounded(parts);
     
     const result = {
       ...data,

@@ -11,23 +11,10 @@ async function runCompanyAgent(jobData: any) {
     return MOCK_COMPANY;
   }
 
-  const prompt = `
-${getCompanyPrompt(jobData)}
-
-You MUST return ONLY a raw JSON object matching this exact structure:
-{
-  "reasoningSteps": ["step 1", "step 2"],
-  "companyExists": boolean,
-  "hasLinkedIn": boolean,
-  "hasReviews": boolean,
-  "hasNews": boolean,
-  "industryAlignment": boolean,
-  "evidence": [{"source": "LinkedIn", "finding": "...", "supports": "neutral", "url": "https://..."}]
-}
-`;
+  const parts = getCompanyPrompt(jobData);
 
   try {
-    const { data, groundingMetadata } = await callGeminiGrounded(prompt);
+    const { data, groundingMetadata } = await callGeminiGrounded(parts);
     
     // Apply deterministic rubric
     const rubricResult = calculateCompanyScore(data);
@@ -37,6 +24,7 @@ You MUST return ONLY a raw JSON object matching this exact structure:
       riskScore: rubricResult.riskScore,
       qualityScore: rubricResult.qualityScore,
       analysis: rubricResult.explanation,
+      scoreBreakdown: rubricResult.breakdown,
       citations: groundingMetadata?.groundingChunks?.map((chunk: any) => chunk.web?.uri).filter(Boolean) || []
     };
 
@@ -51,6 +39,10 @@ You MUST return ONLY a raw JSON object matching this exact structure:
       hasReviews: false,
       hasNews: false,
       industryAlignment: false,
+      recentLayoffsDetected: false,
+      layoffSeverity: "unknown",
+      fundingStage: "unknown",
+      lastFundingYear: null,
       riskScore: 100,
       qualityScore: 0,
       evidence: [],

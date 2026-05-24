@@ -6,7 +6,6 @@ export default function JobPortal() {
   const [loading, setLoading] = useState(true);
   
   // Filter States
-  const [filterRemote, setFilterRemote] = useState(false);
   const [filterCountry, setFilterCountry] = useState('All');
 
   useEffect(() => {
@@ -31,17 +30,16 @@ export default function JobPortal() {
   // Apply filters
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
-      if (filterRemote && !job.is_remote) return false;
       if (filterCountry !== 'All' && job.country !== filterCountry) return false;
       return true;
     });
-  }, [jobs, filterRemote, filterCountry]);
+  }, [jobs, filterCountry]);
 
   if (loading) {
     return (
       <div className="portal-loading">
         <Activity className="spin" size={32} />
-        <p>Loading Verified Jobs...</p>
+        <p>Loading verified remote roles...</p>
       </div>
     );
   }
@@ -51,9 +49,9 @@ export default function JobPortal() {
       <div className="portal-header" style={{ marginBottom: '2rem' }}>
         <h2 className="font-display" style={{ fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <ShieldCheck color="var(--status-success)" />
-          Verified <span className="text-gradient">Opportunities</span>
+          Verified <span className="text-gradient">Remote Roles</span>
         </h2>
-        <p style={{ color: 'var(--text-secondary)' }}>Browse highly trusted and strictly evaluated job listings. Only jobs with Trust &gt;= 80 and Quality &gt;= 60 are shown.</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Remote roles that passed all six forensic agents. Only listings with Legitimacy ≥ 80 and Remote Quality ≥ 60 appear here — meaning the company is verified, the role is genuinely remote, and the hiring process is professional.</p>
       </div>
 
       {/* Filter Bar */}
@@ -63,30 +61,23 @@ export default function JobPortal() {
           <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Filters:</span>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Globe size={14} color="var(--text-tertiary)" />
-          <select 
-            value={filterCountry} 
-            onChange={e => setFilterCountry(e.target.value)}
-            style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-light)', padding: '0.4rem 0.75rem', borderRadius: '4px', outline: 'none', fontSize: '0.9rem' }}
+        <div className="portal-filter-country">
+          <Globe size={14} aria-hidden="true" />
+          <select
+            className="portal-country-select"
+            value={filterCountry}
+            onChange={(e) => setFilterCountry(e.target.value)}
+            aria-label="Filter by country"
           >
-            {uniqueCountries.map(country => (
-              <option key={country} value={country}>{country}</option>
+            {uniqueCountries.map((country) => (
+              <option key={country} value={country}>
+                {country}
+              </option>
             ))}
           </select>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-          <input 
-            type="checkbox" 
-            checked={filterRemote} 
-            onChange={e => setFilterRemote(e.target.checked)}
-            style={{ accentColor: 'var(--status-success)', width: '16px', height: '16px' }}
-          />
-          Remote Only
-        </label>
-
-        <div style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--text-tertiary)' }}>
+        <div className="portal-filter-count">
           Showing {filteredJobs.length} {filteredJobs.length === 1 ? 'job' : 'jobs'}
         </div>
       </div>
@@ -95,7 +86,7 @@ export default function JobPortal() {
       <div className="job-grid" style={{ display: 'grid', gap: '1.5rem', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
         {filteredJobs.length === 0 ? (
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed var(--border-light)' }}>
-            <p style={{ color: 'var(--text-secondary)' }}>No jobs match your filters. Try adjusting your criteria!</p>
+            <p style={{ color: 'var(--text-secondary)' }}>No remote roles match your filters. Try widening your criteria.</p>
           </div>
         ) : (
           filteredJobs.map(job => (
@@ -128,11 +119,11 @@ export default function JobPortal() {
 
               <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ flex: 1, background: 'rgba(34, 197, 94, 0.05)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--status-success)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.25rem' }}>Trust Score</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--status-success)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.25rem' }}>Legitimacy</div>
                   <div className="font-display" style={{ fontSize: '1.5rem', color: 'var(--text-primary)' }}>{job.trust_score}<span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>/100</span></div>
                 </div>
                 <div style={{ flex: 1, background: 'rgba(59, 130, 246, 0.05)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.25rem' }}>Quality Score</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.25rem' }}>Remote Quality</div>
                   <div className="font-display" style={{ fontSize: '1.5rem', color: 'var(--text-primary)' }}>{job.quality_score}<span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>/100</span></div>
                 </div>
               </div>
@@ -144,7 +135,7 @@ export default function JobPortal() {
                 className="btn-primary"
                 style={{ width: '100%', textAlign: 'center', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}
               >
-                View Original Listing <ExternalLink size={16} />
+                View Remote Listing <ExternalLink size={16} />
               </a>
             </div>
           ))

@@ -48,8 +48,21 @@ function getDb() {
 }
 
 // ── Extension Pre-Cache Map ─────────────────────────────────────────
-// Stores raw DOM text sent by the extension for 5 minutes
-export const extensionPreCache = new Map<string, { rawMarkdown: string, expiresAt: number }>();
+// Stores raw DOM text + LinkedIn page metadata sent by the extension for 5 minutes
+export type ExtensionJobMetadata = {
+  postedAgoText: string | null;
+  isRepost: boolean;
+  applicantCountText: string | null;
+  jobPoster: { name: string; profileUrl: string | null; headline: string | null } | null;
+};
+
+export type ExtensionPreCacheEntry = {
+  rawMarkdown: string;
+  metadata?: ExtensionJobMetadata;
+  expiresAt: number;
+};
+
+export const extensionPreCache = new Map<string, ExtensionPreCacheEntry>();
 
 // Clean up expired cache items periodically
 setInterval(() => {
@@ -127,15 +140,21 @@ export function setCachedLLMResponse(prompt: string, response: any, model: strin
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-export function getCachedInvestigation(url: string): any | null {
+export function getCachedInvestigation(
+  url: string,
+  options?: { ignoreTtl?: boolean },
+): any | null {
   const database = getDb();
   const hash = hashPrompt(url);
   const row = database.prepare(
-    'SELECT final_state, created_at FROM investigation_cache WHERE url_hash = ?'
-  ).get(hash) as { final_state: string; created_at: number } | undefined;
+    'SELECT final_state, created_at FROM investigation_cache WHERE url_hash = ? OR url = ? ORDER BY created_at DESC LIMIT 1',
+  ).get(hash, url) as { final_state: string; created_at: number } | undefined;
 
-  if (row && (Date.now() - row.created_at) < CACHE_TTL_MS) {
-    console.log('[Cache] Investigation cache HIT (< 24h old)');
+  if (!row) return null;
+
+  const freshEnough = options?.ignoreTtl || (Date.now() - row.created_at) < CACHE_TTL_MS;
+  if (freshEnough) {
+    console.log('[Cache] Investigation cache HIT' + (options?.ignoreTtl ? ' (TTL ignored)' : ' (< 24h old)'));
     return JSON.parse(row.final_state);
   }
   return null;
@@ -220,5 +239,6 @@ export function clearAllCaches() {
   database.exec('DELETE FROM llm_cache;');
   database.exec('DELETE FROM investigation_cache;');
   database.exec('DELETE FROM jobs;');
-  console.log('[Cache] All caches cleared.');
+  extensionPreCache.clear();
+  console.log('[Cache] All caches cleared (SQLite + extension pre-cache).');
 }

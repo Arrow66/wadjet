@@ -13,17 +13,6 @@ function openInvestigationTab(url) {
   chrome.tabs.create({ url: `${WEB_APP_BASE}/?url=${encodeURIComponent(url)}` });
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
-  const url = tab?.url || '';
-  if (!url.includes('linkedin.com/jobs')) {
-    openInvestigationTab(url || WEB_APP_BASE);
-    return;
-  }
-  chrome.tabs.sendMessage(tab.id, { type: 'TRIGGER_INVESTIGATE' }).catch(() => {
-    openInvestigationTab(url);
-  });
-});
-
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.type === 'CHECK_JOB') {
     const params = new URLSearchParams({
@@ -70,7 +59,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
     const preCacheBody = {
       url: request.url,
-      rawMarkdown: request.rawMarkdown
+      rawMarkdown: request.rawMarkdown,
+      ...(request.metadata ? { metadata: request.metadata } : {})
     };
     debugApi('POST /api/v1/jobs/pre-cache', {
       url: preCacheBody.url,

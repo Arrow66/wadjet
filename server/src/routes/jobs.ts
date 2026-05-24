@@ -59,16 +59,22 @@ router.get('/check', (req, res) => {
 
 // POST /api/v1/jobs/pre-cache (For Extension DOM extraction)
 router.post('/pre-cache', express.json(), (req, res) => {
-  const { url, rawMarkdown } = req.body;
+  const { url, rawMarkdown, metadata } = req.body;
   if (!url || !rawMarkdown) return res.status(400).json({ error: 'Missing payload' });
 
   const normalizedUrl = normalizeUrl(url);
-  // Cache for 5 minutes
-  extensionPreCache.set(normalizedUrl, { 
-    rawMarkdown, 
-    expiresAt: Date.now() + 5 * 60 * 1000 
+  // Cache for 5 minutes. Metadata is optional (older extension builds may omit it).
+  extensionPreCache.set(normalizedUrl, {
+    rawMarkdown,
+    metadata: metadata && typeof metadata === 'object' ? {
+      postedAgoText: metadata.postedAgoText ?? null,
+      isRepost: !!metadata.isRepost,
+      applicantCountText: metadata.applicantCountText ?? null,
+      jobPoster: metadata.jobPoster ?? null,
+    } : undefined,
+    expiresAt: Date.now() + 5 * 60 * 1000
   });
-  
+
   res.json({ success: true, message: 'DOM text pre-cached successfully.' });
 });
 

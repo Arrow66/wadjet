@@ -66,7 +66,11 @@ export default function TrustScoreRing({ score, label = "Trust Score" }) {
       </svg>
       <div className="trust-score-content">
         <span className={`trust-score-number font-display ${textColor}`}>{animatedScore}</span>
-        <span className="trust-score-label">{label}</span>
+        <span className={`trust-score-label${label.includes(' ') ? ' is-multiline' : ''}`}>
+          {label.split(' ').map((word) => (
+            <span key={word} className="trust-score-label-line">{word}</span>
+          ))}
+        </span>
       </div>
     </div>
   );

@@ -20,11 +20,17 @@ export default function InvestigationBoard({ agents, isInvestigating, finalResul
     'adversarialResult'
   ];
 
+  // Hide the adversarial card entirely if the graph router skipped it
+  // (high consensus path). Saves screen real estate for the verdict.
+  const visibleAgents = orderedAgents.filter(
+    (id) => !(id === 'adversarialResult' && agents[id]?.status === 'skipped')
+  );
+
   return (
     <div className="investigation-board-container animate-slide-up">
       <div className="board-header">
         <h2 className="board-title font-display">
-          Live Investigation <span className="text-gradient">Board</span>
+          Live Remote-Job <span className="text-gradient">Verification</span>
         </h2>
         {isInvestigating && (
           <div className="active-indicator">
@@ -32,14 +38,17 @@ export default function InvestigationBoard({ agents, isInvestigating, finalResul
               <span className="pulse-dot-ring"></span>
               <span className="pulse-dot-core"></span>
             </span>
-            Agents Active
+            Agents verifying remote signals
           </div>
         )}
       </div>
 
       <div className="agent-grid">
-        {orderedAgents.map((agentId) => (
-          <div key={agentId} className={agentId === 'adversarialResult' ? 'agent-card-centered' : ''}>
+        {visibleAgents.map((agentId) => (
+          <div
+            key={agentId}
+            className={`agent-grid-cell${agentId === 'adversarialResult' ? ' agent-card-centered' : ''}`}
+          >
             <AgentCard 
               agentId={agentId} 
               data={agents[agentId]} 
