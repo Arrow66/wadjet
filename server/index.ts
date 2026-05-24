@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import statsRouter from './src/routes/stats.js';
 import jobsRouter from './src/routes/jobs.js';
 import portalRouter from './src/routes/portal.js';
@@ -9,13 +11,28 @@ import { requirePartnerApiKey } from './src/middleware/partnerAuth.js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+const isProduction = process.env.NODE_ENV === 'production';
+
+function getPublicOrigin(): string | undefined {
+  return process.env.FRONTEND_URL
+    || process.env.CORS_ORIGIN
+    || process.env.RENDER_EXTERNAL_URL;
+}
 
 // Security and middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: isProduction ? false : undefined,
+}));
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? 'https://yourdomain.com' : 'http://localhost:5173',
+  origin: isProduction
+    ? (getPublicOrigin() || true)
+    : 'http://localhost:5173',
   methods: ['GET', 'POST'],
 }));
 
@@ -296,6 +313,9 @@ app.get('/api/v1/config', async (_req, res) => {
 });
 
 app.post('/api/clear-cache', async (req, res) => {
+  if (isProduction) {
+    return res.status(403).json({ error: 'Not available in production' });
+  }
   try {
     const { clearAllCaches } = await import('./src/services/cache.js');
     clearAllCaches();
@@ -310,9 +330,21 @@ app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/jobs', jobsRouter);
 app.use('/api/v1/portal', portalLimiter, requirePartnerApiKey, portalRouter);
 
-app.listen(Number(PORT), '127.0.0.1', () => {
-  console.log(`Eye Server running on http://127.0.0.1:${PORT}`);
-  if (process.env.NODE_ENV === 'production') {
+if (isProduction) {
+  const frontendDist = path.join(__dirname, '../frontend/dist');
+  app.use(express.static(frontendDist));
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
+app.listen(Number(PORT), HOST, () => {
+  const publicUrl = getPublicOrigin();
+  console.log(`Wadjet server running on http://${HOST}:${PORT}`);
+  if (publicUrl) {
+    console.log(`Public URL: ${publicUrl}`);
+  }
+  if (isProduction) {
     console.log('🔒 PRODUCTION — cached jobs only; unknown URLs fall back to latest verified result');
   } else if (process.env.MOCK_MODE === 'true') {
     console.log('⚡ LOCAL MOCK — cached investigations only (no banner, no Gemini)');

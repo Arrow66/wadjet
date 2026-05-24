@@ -18,6 +18,8 @@ dist-ssr/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+# Committed demo seed for Render / production deploy
+!server/data/demo-cache.sqlite
 
 # Generated debug dumps & scratch test output
 llm-dump.json

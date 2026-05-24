@@ -1,14 +1,36 @@
 import Database from 'better-sqlite3';
 import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
 
-const DB_PATH = path.join(import.meta.dirname, '../../cache.sqlite');
+const SEED_DB_PATH = path.join(import.meta.dirname, '../../data/demo-cache.sqlite');
+
+export function resolveCacheDbPath(): string {
+  if (process.env.CACHE_DB_PATH) {
+    return process.env.CACHE_DB_PATH;
+  }
+  const dataDir = process.env.DATA_DIR || path.join(import.meta.dirname, '../..');
+  return path.join(dataDir, 'cache.sqlite');
+}
+
+function seedCacheIfNeeded(dbPath: string) {
+  if (fs.existsSync(dbPath)) return;
+  if (!fs.existsSync(SEED_DB_PATH)) {
+    console.warn('[Cache] No cache.sqlite and no demo seed at', SEED_DB_PATH);
+    return;
+  }
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.copyFileSync(SEED_DB_PATH, dbPath);
+  console.log('[Cache] Seeded database from demo-cache.sqlite →', dbPath);
+}
 
 let db: any;
 
 function getDb() {
   if (!db) {
-    db = new Database(DB_PATH);
+    const dbPath = resolveCacheDbPath();
+    seedCacheIfNeeded(dbPath);
+    db = new Database(dbPath);
     db.pragma('journal_mode = WAL'); // Better concurrent read performance
     db.exec(`
       CREATE TABLE IF NOT EXISTS llm_cache (
@@ -42,7 +64,7 @@ function getDb() {
         created_at INTEGER NOT NULL
       )
     `);
-    console.log('[Cache] SQLite database initialized at', DB_PATH);
+    console.log('[Cache] SQLite database initialized at', dbPath);
   }
   return db;
 }

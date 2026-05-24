@@ -1,10 +1,9 @@
 import express from 'express';
 import Database from 'better-sqlite3';
-import path from 'path';
-import { extensionPreCache, normalizeUrl } from '../services/cache.js';
+import { extensionPreCache, normalizeUrl, resolveCacheDbPath } from '../services/cache.js';
 
 const router = express.Router();
-const DB_PATH = path.join(import.meta.dirname, '../../cache.sqlite');
+const DB_PATH = resolveCacheDbPath();
 
 function getDb() {
   const db = new Database(DB_PATH, { readonly: true });

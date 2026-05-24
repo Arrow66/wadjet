@@ -1,10 +1,9 @@
 import Database from 'better-sqlite3';
 import crypto from 'crypto';
-import path from 'path';
-import { getCachedInvestigation, normalizeUrl } from './cache.js';
+import { getCachedInvestigation, normalizeUrl, resolveCacheDbPath } from './cache.js';
 import { isCacheOnlyMode } from './runtimeMode.js';
 
-const DB_PATH = path.join(import.meta.dirname, '../../cache.sqlite');
+const DB_PATH = resolveCacheDbPath();
 
 export const PORTAL_LISTING_THRESHOLDS = {
   legitimacy: 80,
