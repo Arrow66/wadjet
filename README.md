@@ -7,6 +7,9 @@ Multi-agent AI verification for remote job listings  :  with full scoring transp
 
 ---
 
+# Live link : https://wadjet.onrender.com/
+              *gemini apis are not connected because of the free tier limit
+
 ## What problem does Wadjet solve?
 
 Remote job boards — especially LinkedIn — are flooded with listings that are hard to evaluate quickly:
